@@ -210,13 +210,23 @@ function handle_match_add(app, ws, msg) {
 	});
 }
 
+// Fields set by bup clients that must survive admin/BTP setup replacements
+const BUP_PRESERVED_SETUP_KEYS = ['teams_present'];
+
 function handle_match_edit(app, ws, msg) {
 	if (!_require_msg(ws, msg, ['tournament_key', 'id', 'setup'])) {
 		return;
 	}
 	const tournament_key = msg.tournament_key;
 	const setup = _extract_setup(msg.setup);
-	// TODO get old setup, make sure no key has been removed
+	app.db.matches.findOne({_id: msg.id, tournament_key}, function(err, existing) {
+		if (!err && existing && existing.setup) {
+			for (const k of BUP_PRESERVED_SETUP_KEYS) {
+				if (existing.setup[k] !== undefined) {
+					setup[k] = existing.setup[k];
+				}
+			}
+		}
 	app.db.matches.update({_id: msg.id, tournament_key}, {$set: {setup}}, {returnUpdatedDocs: true}, function(err, numAffected, changed_match) {
 		if (err) {
 			ws.respond(msg, err);
@@ -238,6 +248,7 @@ function handle_match_edit(app, ws, msg) {
 			btp_manager.update_score(app, changed_match);
 		}
 		ws.respond(msg, err);
+	});
 	});
 }
 

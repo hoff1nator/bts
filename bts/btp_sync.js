@@ -208,6 +208,11 @@ function integrate_matches(app, tkey, btp_state, court_map, callback) {
 			}
 
 			if (cur_match) {
+				// Preserve bup-managed setup fields that BTP doesn't know about
+				if (cur_match.setup && cur_match.setup.teams_present !== undefined) {
+					match.setup.teams_present = cur_match.setup.teams_present;
+				}
+
 				if (utils.plucked_deep_equal(match, cur_match, Object.keys(match), true)) {
 					// No update required
 					cb();

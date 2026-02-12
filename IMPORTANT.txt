@@ -1,0 +1,50 @@
+IMPORTANT: bup integration notes
+==================================
+
+When moving bupdev to bup (production deployment)
+---------------------------------------------------
+Only one change is required:
+
+  File: bts/shortcuts.js, line ~86
+  Change: '/bupdev/#' → '/bup/#'
+
+  This applies to the result_handler function, which powers the /r(courtnum)
+  shortcut URL for the result mode screen.
+
+
+Custom fields added to match setup
+-----------------------------------
+The following setup fields are managed by bup clients and must NOT be wiped
+by BTP syncs or admin edits. They are preserved in:
+
+  - bts/admin.js:    handle_match_edit() via BUP_PRESERVED_SETUP_KEYS
+  - bts/btp_sync.js: integrate_matches() explicit preservation block
+
+  teams_present (boolean)
+    Set to true when both teams have confirmed their presence on court
+    via the result mode presence screen in bup. Used by the court overview
+    to show yellow (waiting) vs green (present) status.
+
+
+New HTTP endpoints added to bts
+---------------------------------
+  GET  /h/:tournament_key/court-overview
+    Self-contained HTML overview page showing all courts with colour-coded
+    status (red=no game, yellow=waiting for players, green=players present).
+    Polls /matches every 5s, updates timer display every 1s.
+    Linked from the tournament dashboard in the admin UI.
+
+  POST /h/:tournament_key/m/:match_id/setup
+    Allows bup clients to update a whitelist of setup fields (currently:
+    teams_present) without replacing the full setup object.
+
+
+New shortcut URLs
+------------------
+  /r             Result mode, no court pre-selected
+  /r1, /r2, ...  Result mode, pre-set to court 1, 2, etc.
+  (redirects to /bupdev/ in dev, change to /bup/ for production)
+
+  Existing shortcuts for reference:
+  /d(n)  Display/scoreboard mode
+  /u(n)  Umpire mode

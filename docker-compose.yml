@@ -1,0 +1,8 @@
+services:
+  bts:
+    build: .
+    ports:
+      - "4000:4000"
+    volumes:
+      - /Users/hoffmann/Documents/bup:/bts/static/bup/dev
+    restart: unless-stopped

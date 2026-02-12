@@ -177,6 +177,9 @@ function ui_show() {
 	}, {
 		label: ci18n('Next Matches'),
 		href: '/admin/t/' + encodeURIComponent(curt.key) + '/upcoming',
+	}, {
+		label: 'Court Overview',
+		href: '/h/' + encodeURIComponent(curt.key) + '/court-overview',
 	},]);
 
 	const main = uiu.qs('.main');

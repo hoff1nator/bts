@@ -89,7 +89,7 @@ function create_app(config, db) {
 	app.wss = wss;
 
 	app.use('/bup/', express.static(config.bup_location, {index: config.bup_index}));
-	app.use('/bupdev/', express.static(path.join(utils.root_dir(), 'static/bup/dev/')));
+	app.use('/bupdev/', express.static(path.join(utils.root_dir(), 'static/bup/dev/'), {index: 'bup.html'}));
 	app.use('/static/', express.static('static/', {}));
 	app.use('/admin/', cadmin_router());
 	app.get('/', function(req, res) {
@@ -98,12 +98,15 @@ function create_app(config, db) {
 	app.use(favicon(utils.root_dir() + '/static/icons/favicon.ico'));
 	app.use('/d(:courtnum)?', shortcuts.display_handler);
 	app.use('/u(:courtnum)?', shortcuts.umpire_handler);
+	app.use('/r(:courtnum)?', shortcuts.result_handler);
 
 	app.use(body_parser.json());
 	app.get('/h/:tournament_key/courts', http_api.courts_handler);
 	app.get('/h/:tournament_key/matches', http_api.matches_handler);
 	app.post('/h/:tournament_key/m/:match_id/score', http_api.score_handler);
+	app.post('/h/:tournament_key/m/:match_id/setup', http_api.setup_handler);
 	app.get('/h/:tournament_key/m/:match_id/info', http_api.matchinfo_handler);
+	app.get('/h/:tournament_key/court-overview', http_api.court_overview_handler);
 	app.get('/h/:tournament_key/logo/:logo_id', http_api.logo_handler);
 
 	wss.on('connection', function connection(ws, req) {
