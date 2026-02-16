@@ -33,7 +33,10 @@ To start an umpire panel, go to http://IP:4000/u2 , where 2 is the court number 
 - `div/decode.js` - Decode VisualReality hex format
 
 # Additional screens and scripts for management of tournaments without umpires
+		Additional screens accessable from tournament admin panel:
 		- courts to call
 		- court overview
+		Player Attendance and Result Screen for each Field/Tablet are accessable via https://IP:4000/r2 where 2 is the court number
+		
 Together with changes in BUP it tracks the normal tournament lifecycle:
 Game Dragged on Field in BTP -> Players Called to Field -> Players Present At Field ->Playing -> Result Entry -> Free Field ->Restart
