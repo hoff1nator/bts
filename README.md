@@ -31,3 +31,9 @@ To start an umpire panel, go to http://IP:4000/u2 , where 2 is the court number 
 
 - `./fetch-btp.js` - Fetch data from BTP via TPNetwork protocol
 - `div/decode.js` - Decode VisualReality hex format
+
+# Additional screens and scripts for management of tournaments without umpires
+		- courts to call
+		- court overview
+Together with changes in BUP it tracks the normal tournament lifecycle:
+Game Dragged on Field in BTP -> Players Called to Field -> Players Present At Field ->Playing -> Result Entry -> Free Field ->Restart
