@@ -19,6 +19,10 @@ function date_str(dt) {
 	return utils.pad(dt.year, 2, '0') + '-' + utils.pad(dt.month, 2, '0') + '-' + utils.pad(dt.day, 2, '0');
 }
 
+function _get_btp_event_name(event, draw) {
+	return (event.Name[0] === draw.Name[0]) ? draw.Name[0] : event.Name[0] + (draw.DrawTypeID[0] > 1 ? ' - ' + draw.Name[0] : "");
+}
+
 function _format_btp_match_relation_label(relation_key, bm) {
 	if (!bm || !bm.MatchNr || !bm.MatchNr[0]) {
 		return null;
@@ -276,7 +280,7 @@ async function craft_match(app, tkey, btp_id, location_map, court_map, event, st
 
 			match_name = best_place + "/" + lowes_place;
 		} else {
-			event_name = (event.Name[0] === draw.Name[0]) ? draw.Name[0] : event.Name[0] + (draw.DrawTypeID[0] > 1 ? ' - ' + draw.Name[0] : "");
+			event_name = _get_btp_event_name(event, draw);
 		}
 
 		const btp_player_ids = [];
@@ -331,21 +335,32 @@ async function craft_match(app, tkey, btp_id, location_map, court_map, event, st
 			scoring_format = fallbackScoringFormat();
 		}
 
-		const setup = {
-			is_match: (bm.IsMatch && bm.IsMatch[0] ? true : false),
-			incomplete: !bm.bts_complete,
-			is_doubles: (gtid === 2),
-			match_num: bm.MatchNr[0],
+			const setup = {
+				is_match: (bm.IsMatch && bm.IsMatch[0] ? true : false),
+				incomplete: !bm.bts_complete,
+				is_doubles: (gtid === 2),
+				match_num: bm.MatchNr[0],
 			scoring_format: scoring_format,
 			team_competition: false,
 			event_name,
 			teams,
 			warmup: "none",
 			links: links,
-			highlight: bm.Highlight[0],
-			phase_name_raw,
-			phase_block_key,
-		};
+				highlight: bm.Highlight[0],
+				phase_name_raw,
+				phase_block_key,
+				stage_id: stage.ID[0],
+				stage_name: stage.Name[0],
+				stage_type: stage.StageType ? stage.StageType[0] : undefined,
+				stage_display_order: stage.DisplayOrder ? stage.DisplayOrder[0] : undefined,
+				draw_id: draw.ID[0],
+				draw_name: draw.Name[0],
+				draw_position: draw.Position ? draw.Position[0] : undefined,
+			};
+
+			if (draw.bts_rankings) {
+				setup.btp_group_rankings = draw.bts_rankings;
+			}
 
 		app.db.tournaments.findOne({ key: tkey }, (err, tournament) => {
 
@@ -457,6 +472,70 @@ async function craft_match(app, tkey, btp_id, location_map, court_map, event, st
 			resolve(match);
 		});
 	});
+}
+
+function _build_btp_rankings_for_draw(draw, event, stages, planning_nodes, entries, players, clubs, districts) {
+	const ranking_nodes = [];
+	for (const node of planning_nodes.values()) {
+		if (!node || String(node.DrawID[0]) !== String(draw.ID[0])) continue;
+		if (!node.EntryID || !node.Rank) continue;
+		const rank = Number(node.Rank[0]);
+		if (!Number.isFinite(rank) || rank < 1) continue;
+		ranking_nodes.push(node);
+	}
+
+	if (ranking_nodes.length === 0) {
+		return null;
+	}
+
+	const stage = stages.get(draw.StageID[0]);
+	const rankings = [];
+	for (const node of ranking_nodes) {
+		const entry = entries.get(node.EntryID[0]);
+		if (!entry) continue;
+		const team_players = [];
+		if (entry.Player1ID && players.get(entry.Player1ID[0])) {
+			team_players.push(players.get(entry.Player1ID[0]));
+		}
+		if (entry.Player2ID && players.get(entry.Player2ID[0])) {
+			team_players.push(players.get(entry.Player2ID[0]));
+		}
+		if (team_players.length === 0) continue;
+		const team = _craft_team.call({ clubs, districts }, team_players);
+		rankings.push({
+			place_from: Number(node.Rank[0]),
+			place_to: Number(node.Rank[0]),
+			team,
+			source: 'btp_ranking',
+			confidence: 'authoritative',
+			event_name: _get_btp_event_name(event, draw),
+			stage_id: draw.StageID[0],
+			stage_name: stage && stage.Name ? stage.Name[0] : undefined,
+			stage_display_order: stage && stage.DisplayOrder ? stage.DisplayOrder[0] : undefined,
+			draw_id: draw.ID[0],
+			draw_name: draw.Name[0],
+			draw_position: draw.Position ? draw.Position[0] : undefined,
+		});
+	}
+
+	if (rankings.length === 0) {
+		return null;
+	}
+
+	rankings.sort((a, b) => a.place_from - b.place_from);
+	return rankings;
+}
+
+function _annotate_draw_rankings(btp_state) {
+	const { draws, events, stages, planning_nodes, entries, players, clubs, districts } = btp_state;
+	for (const draw of draws.values()) {
+		const event = events.get(draw.EventID[0]);
+		if (!event) continue;
+		const rankings = _build_btp_rankings_for_draw(draw, event, stages, planning_nodes, entries, players, clubs, districts);
+		if (rankings) {
+			draw.bts_rankings = rankings;
+		}
+	}
 }
 
 function findDefaultScoringFormat(scoringFormatMap) {
@@ -2672,11 +2751,12 @@ async function integrate_now_on_court(app, tkey, callback) {
 async function sync_btp_data(app, tkey, response) {
 	return new Promise((resolve, reject) => {
 		let btp_state;
-		try {
-			btp_state = btp_parse.get_btp_state(response);
-		} catch (e) {
-			return reject(e);
-		}
+	try {
+		btp_state = btp_parse.get_btp_state(response);
+		_annotate_draw_rankings(btp_state);
+	} catch (e) {
+		return reject(e);
+	}
 
 		async.waterfall([
 			cb => integrate_btp_settings(app, tkey, btp_state, cb),

@@ -18,6 +18,29 @@ const all_panels = [];
 
 const default_tournament_key = 'default';
 const default_displaysettings_key = default_tournament_key;
+
+function normalize_panel_devicemode(devicemode) {
+	return devicemode === 'umpire' ? 'umpire' : 'display';
+}
+
+function get_default_displaysettings_id(tournament, devicemode = 'display') {
+	const normalized_devicemode = normalize_panel_devicemode(devicemode);
+	if (normalized_devicemode === 'umpire') {
+		return (tournament && tournament.displaysettings_general_tablet)
+			|| (tournament && tournament.displaysettings_general)
+			|| default_displaysettings_key;
+	}
+	return (tournament && tournament.displaysettings_general)
+		|| (tournament && tournament.displaysettings_general_tablet)
+		|| default_displaysettings_key;
+}
+
+function is_default_displaysetting_id(tournament, displaysetting_id) {
+	return !!displaysetting_id && !!tournament
+		&& (displaysetting_id === tournament.displaysettings_general
+			|| displaysetting_id === tournament.displaysettings_general_tablet);
+}
+
 function on_close(app, ws) {
 	if (!utils.remove(all_panels, ws)) {
 		serror.silent('Removing Scoreboard ws, but it was not connected!?');
@@ -39,16 +62,18 @@ async function notify_admin_display_status_changed(app, ws, ws_online) {
 		const hostname = await determine_client_hostname(ws);
 		var display_court_displaysetting = await get_display_court_displaysettings(app, client_id);
 		if (display_court_displaysetting == null) {
-			display_court_displaysetting = create_display_court_displaysettings(client_id, hostname, null, generate_default_displaysettings_id(tournament));
+			display_court_displaysetting = create_display_court_displaysettings(
+				client_id,
+				hostname,
+				null,
+				get_default_displaysettings_id(tournament, ws.panel_devicemode),
+				ws.panel_devicemode,
+			);
 			display_court_displaysetting = await persist_client_court_displaysetting(app, display_court_displaysetting);
 		}
 		display_court_displaysetting.online = ws_online;
 		admin.notify_change(app, default_tournament_key, 'display_status_changed', {'display_court_displaysetting': display_court_displaysetting });	
 	});
-}
-
-function generate_default_displaysettings_id(tournament) {
-	return (tournament && tournament.displaysettings_general) ? tournament.displaysettings_general : default_displaysettings_key;
 }
 
 function notify_change(app, tournament_key, court_id, ctype, val) {
@@ -442,7 +467,13 @@ async function update_device_info(app, tournament_key, device_info) {
 			const hostname = await determine_client_hostname(panel);
 			var display_court_displaysetting = await get_display_court_displaysettings(app, client_id);
 			if (display_court_displaysetting == null) {
-				display_court_displaysetting = create_display_court_displaysettings(client_id, hostname, panel.court_id, generate_default_displaysettings_id(tournament));
+				display_court_displaysetting = create_display_court_displaysettings(
+					client_id,
+					hostname,
+					panel.court_id,
+					get_default_displaysettings_id(tournament, panel.panel_devicemode),
+					panel.panel_devicemode,
+				);
 			} else {
 				display_court_displaysetting.hostname = hostname;
 			}
@@ -464,18 +495,20 @@ function fetch_panel(client_id) {
 }
 
 
-function create_display_court_displaysettings(client_id, hostname, court_id, displaysetting_id) {
+function create_display_court_displaysettings(client_id, hostname, court_id, displaysetting_id, panel_devicemode = 'display') {
 	return  {
 		client_id: client_id,
 		hostname: hostname,
 		court_id: court_id,
 		displaysetting_id: displaysetting_id,
+		panel_devicemode: normalize_panel_devicemode(panel_devicemode),
 	}
 }
 
 async function handle_init(app, ws, msg) {
 	const tournament_key = msg.tournament_key;
 	var court_id = msg.panel_settings.court_id;
+	ws.panel_devicemode = normalize_panel_devicemode(msg.panel_settings && msg.panel_settings.devicemode);
 	if (court_id) {
 		ws.court_id = court_id;
 	} else {
@@ -483,10 +516,11 @@ async function handle_init(app, ws, msg) {
 		court_id = undefined;
 	}
 	if (msg.initialize_display) {
-		initialize_client(ws, app, tournament_key, court_id);
+		await initialize_client(ws, app, tournament_key, court_id, undefined, ws.panel_devicemode);
 	} else { 
 		matches_handler(app, ws, tournament_key, ws.court_id);
 	}
+	await notify_admin_display_status_changed(app, ws, true);
 	send_courts(app, ws, tournament_key);
 }
 
@@ -502,11 +536,12 @@ async function send_advertisement_remove(app, tournament_key, advertisement_id) 
 	notify_change_broadcast(app, tournament_key, 'advertisement_remove', { advertisement_id: advertisement_id });
 }
 
-async function initialize_client(ws, app, tournament_key, court_id, displaysetting_id) {
+async function initialize_client(ws, app, tournament_key, court_id, displaysetting_id, panel_devicemode = 'display') {
 	const client_id = determine_client_id(ws);
 	const hostname = await determine_client_hostname(ws);
+	ws.panel_devicemode = normalize_panel_devicemode(panel_devicemode);
 	if (client_id) {
-		let display_setting = await get_display_setting(app, tournament_key, client_id, court_id, displaysetting_id)
+		let display_setting = await get_display_setting(app, tournament_key, client_id, court_id, displaysetting_id, ws.panel_devicemode, hostname)
 		if (display_setting != null) {
 			ws.court_id = display_setting.court_id;
 			court_id = display_setting.court_id;
@@ -713,68 +748,66 @@ function get_display_court_displaysettings(app, client_id) {
 		});
 	});
 }
-function get_display_setting(app, tkey, client_id, court_id, displaysetting) {
-	return new Promise((resolve, reject) => {
-		const display_court_query = { 'client_id': client_id };
-		app.db.display_court_displaysettings.find(display_court_query).limit(1).exec((err, display_court_displaysetting) => {
-			if (err) {
-				return reject(err);
-			}
-			var returnvalue = null;
-			if (display_court_displaysetting.length == 1) {
-				const display_query = { 'id': display_court_displaysetting[0].displaysetting_id };
-				app.db.displaysettings.find(display_query).limit(1).exec((err, display_setting) => {
-					if (err) {
-						return reject(err);
-					}
-					if (display_setting.length == 1) {
-						returnvalue = display_setting[0];
-						returnvalue.court_id = display_court_displaysetting[0].court_id;
-						returnvalue.displaymode_court_id = display_court_displaysetting[0].court_id;
-					}
-					app.db.advertisements.find({}, function (err, advertisements) {
-						if (err) {
-							return resolve(returnvalue);
-						}
-						if(returnvalue) {
-							returnvalue.advertisements = advertisements;
-						}
-						resolve(returnvalue);
+async function get_display_setting(app, tkey, client_id, court_id, displaysetting, panel_devicemode = 'display', hostname = null) {
+	const normalized_panel_devicemode = normalize_panel_devicemode(panel_devicemode);
+	const tournament = await app.db.tournaments.findOne_async({ key: tkey });
+	if (!tournament) {
+		throw new Error('No tournament ' + tkey);
+	}
 
-					});
-				});
-			} else {
-				app.db.tournaments.findOne({ key: tkey }, async (err, tournament) => {
-					if (err || !tournament) {
-						return reject(err);
-					}
-					var displaysetting_id = generate_default_displaysettings_id(tournament);
-					if (displaysetting) {
-						displaysetting_id = displaysetting;
-					}
-					const display_query_default = { 'id': displaysetting_id };
-					app.db.displaysettings.find(display_query_default).limit(1).exec((err, display_setting_default) => {
-						if (err) {
-							return reject(err);
-						}
-						if (display_setting_default.length == 1) {
-							returnvalue = display_setting_default[0];
-							returnvalue.court_id = court_id;
-							returnvalue.displaymode_court_id = court_id;
-						} 
-						app.db.advertisements.find({}, function (err, advertisements) {
-							if (err) {
-								return resolve(returnvalue);
-							}
-							returnvalue.advertisements = advertisements;
-							resolve(returnvalue);
+	let display_court_displaysetting = await get_display_court_displaysettings(app, client_id);
+	let current_displaysetting = null;
+	if (display_court_displaysetting && display_court_displaysetting.displaysetting_id) {
+		current_displaysetting = await app.db.displaysettings.findOne_async({ id: display_court_displaysetting.displaysetting_id });
+	}
 
-						});
-					});
-				});
-			}
-		});
-	});
+	const desired_default_id = displaysetting || get_default_displaysettings_id(tournament, normalized_panel_devicemode);
+	if (!display_court_displaysetting) {
+		display_court_displaysetting = create_display_court_displaysettings(
+			client_id,
+			hostname,
+			court_id,
+			desired_default_id,
+			normalized_panel_devicemode,
+		);
+		display_court_displaysetting = await persist_client_court_displaysetting(app, display_court_displaysetting);
+	} else {
+		const updatevalues = {};
+		if (hostname && display_court_displaysetting.hostname !== hostname) {
+			updatevalues.hostname = hostname;
+		}
+		if (display_court_displaysetting.panel_devicemode !== normalized_panel_devicemode) {
+			updatevalues.panel_devicemode = normalized_panel_devicemode;
+		}
+		if ((display_court_displaysetting.court_id == null) && (court_id != null)) {
+			updatevalues.court_id = court_id;
+		}
+		const uses_default_setting = is_default_displaysetting_id(tournament, display_court_displaysetting.displaysetting_id);
+		const has_wrong_mode = current_displaysetting && current_displaysetting.devicemode !== normalized_panel_devicemode;
+		const is_missing_setting = !display_court_displaysetting.displaysetting_id || !current_displaysetting;
+		if (uses_default_setting || has_wrong_mode || is_missing_setting) {
+			updatevalues.displaysetting_id = desired_default_id;
+		}
+		if (Object.keys(updatevalues).length > 0) {
+			display_court_displaysetting = await update_client_court_displaysetting(app, display_court_displaysetting.client_id, updatevalues);
+		}
+	}
+
+	let returnvalue = null;
+	const effective_displaysetting_id = display_court_displaysetting && display_court_displaysetting.displaysetting_id
+		? display_court_displaysetting.displaysetting_id
+		: desired_default_id;
+	const effective_displaysetting = await app.db.displaysettings.findOne_async({ id: effective_displaysetting_id });
+	if (effective_displaysetting) {
+		returnvalue = effective_displaysetting;
+		returnvalue.court_id = display_court_displaysetting ? display_court_displaysetting.court_id : court_id;
+		returnvalue.displaymode_court_id = returnvalue.court_id;
+	}
+	const advertisements = await app.db.advertisements.find_async({});
+	if (returnvalue) {
+		returnvalue.advertisements = advertisements;
+	}
+	return returnvalue;
 }
 
 function handle_command_done(app, ws, msg) {
@@ -1093,7 +1126,7 @@ function reinitialize_panel(app, tournament_key, client_id, new_court_id, displa
 			if (new_court_id != null) {
 				panel_ws.court_id = new_court_id;
 			}
-			initialize_client(panel_ws, app, tournament_key, panel_ws.court_id, displaysetting_id);
+			initialize_client(panel_ws, app, tournament_key, panel_ws.court_id, displaysetting_id, panel_ws.panel_devicemode);
 			return true;
 		}
 	}
@@ -1124,7 +1157,13 @@ async function add_display_status(app, tournament, displays, callback) {
 		}
 		if (!found) {
 			const ws_hostname = await determine_client_hostname(panel_ws);
-			const client_court_displaysetting = create_display_court_displaysettings(ws_client_id, ws_hostname, panel_ws.court_id, generate_default_displaysettings_id(tournament));
+			const client_court_displaysetting = create_display_court_displaysettings(
+				ws_client_id,
+				ws_hostname,
+				panel_ws.court_id,
+				get_default_displaysettings_id(tournament, panel_ws.panel_devicemode),
+				panel_ws.panel_devicemode,
+			);
 			client_court_displaysetting.online = true;
 			client_court_displaysetting.battery = panel_ws.battery;
 			displays[displays.length] = client_court_displaysetting;

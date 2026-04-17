@@ -102,6 +102,8 @@ var ci18n_de = {
 	'announcements:men_doubles': 'Herrendoppel',
 	'announcements:women_singles': 'Dameneinzel',
 	'announcements:women_doubles': 'Damendoppel',
+	'announcements:singles': 'Einzel',
+	'announcements:doubles': 'Doppel',
 	'announcements:round_16': 'Achtelfinale',
 	'announcements:quaterfinal': 'Viertelfinale',
 	'announcements:semifinal': 'Halbfinale',
@@ -147,6 +149,7 @@ var ci18n_de = {
 	'display_setting:language_nl-BE'    : 'Vlaams',
 	'display_setting:fullscreen_ask'    : 'Vollbildmodus anfragen: ',
 	'display_setting:show_announcements': 'Ansagen zeigen: ',
+	'display_setting:neversettings': 'Settings-Dialog auf dem Gerät sperren',
 	'display_setting:autohide': 'Verberge Einstellungen nach (ms): ',
 	'display_setting:click_mode': 'Touch-Erkennung: ',
 	'display_setting:double_click_timeout': 'Doppel-Touch-Sperre (ms): ',
@@ -184,6 +187,7 @@ var ci18n_de = {
 	'tournament:edit:courts': 'Felder:',
 	'tournament:edit:dm_style': 'Standard-Ansicht:',
 	'tournament:edit:displaysettings_general': 'Standard-Displayeinstellung:',
+	'tournament:edit:displaysettings_general_tablet': 'Standard-Tableteinstellung:',
 	'tournament:edit:warmup_timer_behavior': 'Verhalten des Vorbereitungs-Countdowns:',
 	'tournament:edit:warmup_timer_behavior:bwf-2016': 'BWF ab 2016 (ab Auslosung)',
 	'tournament:edit:warmup_timer_behavior:legacy': 'Deutschland (ab Auslosung)',
@@ -240,6 +244,9 @@ var ci18n_de = {
 	'tournament:edit:ticker_url': 'Ticker-Adresse:',
 	'tournament:edit:ticker_password': 'Ticker-Passwort:',
 	'tournament:edit:general_displaysettings': 'Verwaltung der Displayeinstellungen:',
+	'tournament:edit:displaysettings:name': 'Name / Beschreibung',
+	'tournament:edit:displaysettings:mode': 'Modus',
+	'tournament:edit:displaysettings:actions': 'Aktionen',
 	'tournament:edit:displays': 'Anzeigen administrieren:',
 	'tournament:edit:displays:hostname': 'Hostname',
 	'tournament:edit:displays:batterylevel': 'Akku',
@@ -379,7 +386,7 @@ var ci18n_de = {
 	'tabletoperator:move_up': 'In Liste vorziehen',
 	'tabletoperator:move_down': 'In Liste zurückstellen',
 	'tabletoperator:remove': 'Von Liste nehmen',
-	'csvexport:winners': 'CSV-Export für Siegerurkunden',
+	'csvexport:winners': 'Urkunden-Export (Word/CSV)',
 };
 
 /*@DEV*/

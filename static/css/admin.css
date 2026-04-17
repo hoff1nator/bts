@@ -802,6 +802,9 @@ a:hover {
 	z-index: 1000;
 	background-color: rgba(0, 0, 0, 0.9);
 	text-align: center;
+	overflow-y: auto;
+	padding: 1rem 0;
+	box-sizing: border-box;
 }
 .dialog {
 	display: inline-block;
@@ -809,6 +812,14 @@ a:hover {
 	border-bottom-left-radius: 0.5em;
 	border-bottom-right-radius: 0.5em;
 	padding: 1em;
+	max-height: calc(100vh - 2rem);
+	overflow-y: auto;
+	margin: 0 auto;
+	box-sizing: border-box;
+}
+
+.dialog.display_setting_dialog {
+	width: min(96vw, 1040px);
 }
 
 .nationstats_table tr:nth-child(odd) td {
@@ -1068,6 +1079,53 @@ h2.edit {
 	font-weight: 400;
 }
 
+.certificate_export_badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.14rem 0.45rem;
+	border-radius: 999px;
+	font-size: 0.82em;
+	line-height: 1.25;
+	white-space: nowrap;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+.certificate_export_badge_complete {
+	background: #dff2e2;
+	color: #225a28;
+	box-shadow: inset 0 0 0 1px rgba(34, 90, 40, 0.18);
+}
+
+.certificate_export_badge_pending {
+	background: #fff1cc;
+	color: #6d5200;
+	box-shadow: inset 0 0 0 1px rgba(109, 82, 0, 0.18);
+}
+
+.certificate_export_badge_exported {
+	background: #e7eefc;
+	color: #274a87;
+	box-shadow: inset 0 0 0 1px rgba(39, 74, 135, 0.18);
+}
+
+.certificate_export_badge_unexported {
+	background: #f2f2f2;
+	color: #555;
+	box-shadow: inset 0 0 0 1px rgba(85, 85, 85, 0.14);
+}
+
+.certificate_export_badge_kind {
+	background: #f6e8fb;
+	color: #6f337f;
+	box-shadow: inset 0 0 0 1px rgba(111, 51, 127, 0.18);
+}
+
+.certificate_export_badge_places {
+	background: #edf1f5;
+	color: #3f4c59;
+	box-shadow: inset 0 0 0 1px rgba(63, 76, 89, 0.16);
+}
+
 .scoring_format_edit_container {
 	display: grid;
 	gap: 1rem;
@@ -1099,6 +1157,42 @@ h2.edit {
 	text-align: left;
 }
 
+.display_setting_section{
+	margin: 10px;
+	padding: 1rem;
+	border: 1px solid #d7d7d7;
+	border-radius: 16px;
+	background: #f7f7f8;
+}
+
+.display_setting_section_title{
+	margin: 0 0 0.85rem 0;
+	font-size: 1rem;
+}
+
+.display_setting_preview_layout{
+	display: grid;
+	grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
+	gap: 1rem;
+	align-items: start;
+}
+
+.display_setting_section_column{
+	min-width: 0;
+}
+
+.display_setting_settings_column{
+	display: flex;
+	flex-direction: column;
+	gap: 0.65rem;
+}
+
+.display_setting_preview_section{
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+}
+
 .edit_display_setting_container > div{
 	margin: 10px;
 	display: flex;
@@ -1115,6 +1209,61 @@ h2.edit {
 
 .edit_display_setting_container > div > select{
 	width: 300px;
+}
+
+.edit_display_setting_container > .display_setting_preview_section{
+	display: block;
+	width: auto;
+}
+
+.display_setting_section > div,
+.display_setting_settings_column > div{
+	margin: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0.35rem;
+	width: 100%;
+}
+
+.display_setting_section > div > span.label,
+.display_setting_settings_column > div > span.label,
+.display_setting_section > div > label,
+.display_setting_settings_column > div > label{
+	display: block;
+	width: 100%;
+	padding-top: 20px;
+	box-sizing: border-box;
+}
+
+.display_setting_section > div > input[type=text],
+.display_setting_settings_column > div > input[type=text]{
+	width: 100%;
+	max-width: 100%;
+}
+
+.display_setting_section > div > input,
+.display_setting_settings_column > div > input{
+	width: 100%;
+	max-width: 100%;
+}
+
+.display_setting_section > div > select,
+.display_setting_settings_column > div > select{
+	width: 100%;
+	max-width: 100%;
+}
+
+.edit_display_setting_container > .display_setting_preview_section .display_setting_preview_body,
+.edit_display_setting_container > .display_setting_preview_section .bup_preview_outer,
+.edit_display_setting_container > .display_setting_preview_section .bup_preview_panels{
+	width: 100%;
+}
+
+@media (max-width: 1100px) {
+	.display_setting_preview_layout{
+		grid-template-columns: 1fr;
+	}
 }
 
 

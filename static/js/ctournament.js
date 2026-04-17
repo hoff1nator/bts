@@ -1469,9 +1469,534 @@ var ctournament = (function() {
 		}, {
 			class: 'toprow_menu_separator',
 		},
-		...view_items);
+		...view_items, {
+			class: 'toprow_menu_separator',
+		}, {
+			label: ci18n('csvexport:winners'),
+			func: ui_certificate_export,
+		});
 
 		return items;
+	}
+
+	function format_date_input_value(date) {
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, '0');
+		const day = String(date.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
+	function format_certificate_export_timestamp(value) {
+		if (!value) {
+			return '';
+		}
+		const parsed = new Date(value);
+		if (Number.isNaN(parsed.getTime())) {
+			return String(value);
+		}
+		return parsed.toLocaleString('de-DE', {
+			day: '2-digit',
+			month: '2-digit',
+			year: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit',
+		});
+	}
+
+	function _cancel_ui_certificate_export() {
+		const dlg = document.querySelector('.certificate_export_dialog');
+		if (!dlg) {
+			return;
+		}
+		cbts_utils.esc_stack_pop();
+		uiu.remove(dlg);
+		if (/\/certificate_export$/.test(window.location.pathname)) {
+			history.back();
+		}
+	}
+
+	function ui_certificate_export() {
+		if (document.querySelector('.certificate_export_dialog')) {
+			return;
+		}
+		crouting.set('t/' + curt.key + '/certificate_export', {}, _cancel_ui_certificate_export);
+		cbts_utils.esc_stack_push(_cancel_ui_certificate_export);
+
+		const body = uiu.qs('body');
+		const dialogBg = uiu.el(body, 'div', 'dialog_bg certificate_export_dialog');
+		const dialog = uiu.el(dialogBg, 'div', 'dialog');
+		uiu.el(dialog, 'h3', {}, ci18n('csvexport:winners'));
+
+		const form = uiu.el(dialog, 'form');
+
+		const title = ccsvexport.split_tournament_title(curt.name, curt);
+		const event_options = ccsvexport.get_certificate_event_options(curt.matches);
+		const today = new Date();
+		let certificateSettingsSaveTimer = null;
+		let pendingCertificateSettingsChanges = {};
+
+		function save_certificate_export_settings(changes) {
+			send_with_live_status({
+				type: 'tournament_edit_props',
+				key: curt.key,
+				props: changes,
+			}, (err) => {
+				if (err) {
+					cerror.net(err);
+				}
+			});
+		}
+
+		function schedule_certificate_export_settings_save(changes) {
+			pendingCertificateSettingsChanges = {
+				...pendingCertificateSettingsChanges,
+				...changes,
+			};
+			if (certificateSettingsSaveTimer != null) {
+				window.clearTimeout(certificateSettingsSaveTimer);
+			}
+			certificateSettingsSaveTimer = window.setTimeout(() => {
+				certificateSettingsSaveTimer = null;
+				const mergedChanges = pendingCertificateSettingsChanges;
+				pendingCertificateSettingsChanges = {};
+				save_certificate_export_settings(mergedChanges);
+			}, 250);
+		}
+
+		const title1Label = uiu.el(form, 'label');
+		title1Label.style.display = 'block';
+		title1Label.style.marginBottom = '0.75em';
+		uiu.el(title1Label, 'span', {}, 'Veranstaltung #1');
+		const title1Input = uiu.el(title1Label, 'input', {
+			type: 'text',
+			name: 'veranstaltung_1',
+			value: curt.certificate_title_line_1 || title.veranstaltung_1 || '',
+		});
+		title1Input.style.display = 'block';
+		title1Input.style.width = '100%';
+		title1Input.style.boxSizing = 'border-box';
+
+		const title2Label = uiu.el(form, 'label');
+		title2Label.style.display = 'block';
+		title2Label.style.marginBottom = '0.75em';
+		uiu.el(title2Label, 'span', {}, 'Veranstaltung #2');
+		const title2Input = uiu.el(title2Label, 'input', {
+			type: 'text',
+			name: 'veranstaltung_2',
+			value: curt.certificate_title_line_2 || title.veranstaltung_2 || '',
+		});
+		title2Input.style.display = 'block';
+		title2Input.style.width = '100%';
+		title2Input.style.boxSizing = 'border-box';
+
+		const dateLabel = uiu.el(form, 'label');
+		dateLabel.style.display = 'block';
+		dateLabel.style.marginBottom = '0.75em';
+		uiu.el(dateLabel, 'span', {}, 'Datum');
+		const dateInput = uiu.el(dateLabel, 'input', {
+			type: 'date',
+			name: 'datum',
+			value: curt.certificate_export_date || format_date_input_value(today),
+		});
+		dateInput.style.display = 'block';
+		dateInput.style.width = '100%';
+		dateInput.style.boxSizing = 'border-box';
+
+		const countLabel = uiu.el(form, 'label');
+		countLabel.style.display = 'block';
+		countLabel.style.marginBottom = '0.75em';
+		uiu.el(countLabel, 'span', {}, 'Anzahl der Urkunden je Disziplin');
+		const countInput = uiu.el(countLabel, 'input', {
+			type: 'number',
+			name: 'max_place',
+			min: '1',
+			step: '1',
+			value: String(curt.certificate_export_max_place || 3),
+		});
+		countInput.style.display = 'block';
+		countInput.style.width = '100%';
+		countInput.style.boxSizing = 'border-box';
+
+		const eventsWrap = uiu.el(form, 'div', 'settings');
+		uiu.el(eventsWrap, 'h3', {}, 'Disziplinen');
+
+		if (event_options.length === 0) {
+			uiu.el(eventsWrap, 'p', 'hint', 'Keine Disziplinen mit Platzierungsspielen gefunden.');
+			const emptyActions = uiu.el(form, 'div', { style: 'margin-top: 1.5em;' });
+			const cancelBtn = uiu.el(emptyActions, 'button', {
+				type: 'button',
+				class: 'match_save_button',
+			}, 'Zurück');
+			cancelBtn.addEventListener('click', _cancel_ui_certificate_export);
+		} else {
+			const toggleRow = uiu.el(eventsWrap, 'div', { style: 'margin-bottom: 1em;' });
+			const selectAllBtn = uiu.el(toggleRow, 'button', {
+				type: 'button',
+			}, 'Alle auswählen');
+			const clearBtn = uiu.el(toggleRow, 'button', {
+				type: 'button',
+				style: 'margin-left: 0.5em;',
+			}, 'Keine auswählen');
+			const resetAllBtn = uiu.el(toggleRow, 'button', {
+				type: 'button',
+				style: 'margin-left: 0.5em;',
+			}, 'Exportstatus aller Disziplinen zurücksetzen');
+
+			const quickFilterWrap = uiu.el(eventsWrap, 'div', { style: 'margin-bottom: 1em;' });
+			const onlyCompleteLabel = uiu.el(quickFilterWrap, 'label', {
+				style: 'display: inline-flex; gap: 0.5em; align-items: center; margin-right: 1em;',
+			});
+			const onlyCompleteInput = uiu.el(onlyCompleteLabel, 'input', {
+				type: 'checkbox',
+				checked: 'checked',
+			});
+			uiu.el(onlyCompleteLabel, 'span', {}, 'Nur fertig');
+
+			const onlyNewLabel = uiu.el(quickFilterWrap, 'label', {
+				style: 'display: inline-flex; gap: 0.5em; align-items: center; margin-right: 1em;',
+			});
+			const onlyNewInput = uiu.el(onlyNewLabel, 'input', {
+				type: 'checkbox',
+				checked: 'checked',
+			});
+			uiu.el(onlyNewLabel, 'span', {}, 'Nur noch nicht exportiert');
+
+			const lastScheduledLabel = uiu.el(quickFilterWrap, 'label', {
+				style: 'display: inline-flex; gap: 0.5em; align-items: center; margin-right: 1em;',
+			});
+			uiu.el(lastScheduledLabel, 'span', {}, 'Letztes Spiel am');
+			const lastScheduledInput = uiu.el(lastScheduledLabel, 'input', {
+				type: 'date',
+				value: format_date_input_value(today),
+			});
+
+			const typeFilterWrap = uiu.el(eventsWrap, 'div', { style: 'margin-bottom: 1em;' });
+			uiu.el(typeFilterWrap, 'span', { style: 'margin-right: 0.75em;' }, 'Typ:');
+			const typeFilterValues = ['all', 'single', 'double'];
+			const typeFilterLabels = {
+				all: 'Alle',
+				single: 'Nur Einzel',
+				double: 'Nur Doppel',
+			};
+			const typeFilterInputs = {};
+			typeFilterValues.forEach((value, index) => {
+				const radioLabel = uiu.el(typeFilterWrap, 'label', {
+					style: 'display: inline-flex; gap: 0.5em; align-items: center; margin-right: 1em;',
+				});
+				const attrs = {
+					type: 'radio',
+					name: 'certificate_export_type_filter',
+					value,
+				};
+				if (index === 0) {
+					attrs.checked = 'checked';
+				}
+				typeFilterInputs[value] = uiu.el(radioLabel, 'input', attrs);
+				uiu.el(radioLabel, 'span', {}, typeFilterLabels[value]);
+			});
+
+			const applyQuickFilterBtn = uiu.el(eventsWrap, 'button', {
+				type: 'button',
+				style: 'margin-bottom: 1em;',
+			}, 'Auswahl aus Filtern übernehmen');
+
+			const eventList = uiu.el(eventsWrap, 'div');
+
+			const eventCheckboxes = [];
+			event_options.forEach((event_option) => {
+				const row = uiu.el(eventList, 'div', {
+					style: 'display: flex; gap: 0.75em; align-items: flex-start; margin: 0.4em 0;',
+				});
+				const selector = uiu.el(row, 'label', {
+					style: 'display: flex; gap: 0.75em; align-items: flex-start; flex: 1 1 auto;',
+				});
+				const checkbox = uiu.el(selector, 'input', {
+					type: 'checkbox',
+					checked: 'checked',
+					'data-event-name': event_option.event_name,
+				});
+				const infoWrap = uiu.el(selector, 'div', { style: 'display: block; flex: 1 1 auto;' });
+				const titleLine = uiu.el(infoWrap, 'div', {
+					style: 'display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em 0.4em;',
+				});
+				const titleText = uiu.el(titleLine, 'span', {}, event_option.label);
+				const resetBtn = uiu.el(row, 'button', {
+					type: 'button',
+					style: 'margin-left: 0.5em;',
+				}, 'Zurücksetzen');
+				eventCheckboxes.push({
+					checkbox,
+					event_option,
+					titleLine,
+					titleText,
+					resetBtn,
+				});
+			});
+
+			function get_selected_type_filter() {
+				if (typeFilterInputs.single.checked) return 'single';
+				if (typeFilterInputs.double.checked) return 'double';
+				return 'all';
+			}
+
+			function render_status_badge(container, text, class_name) {
+				return uiu.el(container, 'span', {
+					class: `certificate_export_badge ${class_name}`,
+				}, text);
+			}
+
+			function format_certificate_preview_tooltip(event_name, max_place, exported_at_display) {
+				const rows = ccsvexport.build_certificate_rows(curt.matches, curt, {
+					max_place,
+					selected_event_names: new Set([event_name]),
+				});
+				const lines = [];
+				if (exported_at_display) {
+					lines.push(`Zuletzt exportiert: ${exported_at_display}`);
+				}
+				if (rows.length === 0) {
+					lines.push('Keine eindeutigen Platzierungen verfügbar.');
+					return lines.join('\n');
+				}
+				lines.push('Platzierungen:');
+				rows
+					.sort((a, b) => Number(a.place || 0) - Number(b.place || 0))
+					.forEach((row) => {
+						const players = [row.spieler_1, row.spieler_2].filter(Boolean).join(' / ');
+						lines.push(`${row.platz}: ${players || '—'}`);
+					});
+				return lines.join('\n');
+			}
+
+			function update_event_statuses() {
+				const max_place = Number(countInput.value || 0);
+				const export_state = curt.certificate_exports || {};
+				eventCheckboxes.forEach((entry) => {
+					const event_option = entry.event_option;
+					const is_complete = ccsvexport.event_is_complete_for_max_place(event_option, max_place);
+					const exported_at = export_state[event_option.event_name] || null;
+					const exported_at_display = format_certificate_export_timestamp(exported_at);
+					const available_places = (event_option.available_places || []).join(', ');
+					entry.checkbox.dataset.complete = is_complete ? 'true' : 'false';
+					entry.checkbox.dataset.exported = exported_at ? 'true' : 'false';
+					entry.checkbox.dataset.kind = event_option.kind || '';
+					entry.checkbox.dataset.latestScheduledDate = event_option.latest_scheduled_date || '';
+					while (entry.titleLine.childNodes.length > 1) {
+						entry.titleLine.removeChild(entry.titleLine.lastChild);
+					}
+					render_status_badge(
+						entry.titleLine,
+						is_complete ? 'Fertig' : 'Offen',
+						is_complete
+							? 'certificate_export_badge_complete'
+							: 'certificate_export_badge_pending'
+					);
+					render_status_badge(
+						entry.titleLine,
+						exported_at ? `Exportiert: ${exported_at_display}` : 'Nicht exportiert',
+						exported_at
+							? 'certificate_export_badge_exported'
+							: 'certificate_export_badge_unexported'
+					);
+					render_status_badge(
+						entry.titleLine,
+						event_option.kind === 'double' ? 'Doppel' : 'Einzel',
+						'certificate_export_badge_kind'
+					);
+					render_status_badge(
+						entry.titleLine,
+						`Plätze: ${available_places || '—'}`,
+						'certificate_export_badge_places'
+					);
+					if (event_option.latest_scheduled_date) {
+						const latestDisplay = event_option.latest_scheduled_time
+							? `${event_option.latest_scheduled_date} ${event_option.latest_scheduled_time}`
+							: event_option.latest_scheduled_date;
+						render_status_badge(
+							entry.titleLine,
+							`Letztes Spiel: ${latestDisplay}`,
+							'certificate_export_badge_places'
+						);
+					}
+					const previewTitle = format_certificate_preview_tooltip(
+						event_option.event_name,
+						max_place,
+						exported_at ? exported_at_display : ''
+					);
+					entry.titleLine.title = previewTitle;
+					entry.titleText.title = previewTitle;
+					entry.checkbox.title = previewTitle;
+				});
+			}
+
+			function apply_quick_filters() {
+				const selected_type = get_selected_type_filter();
+				eventCheckboxes.forEach((entry) => {
+					const checkbox = entry.checkbox;
+					const matches_complete = !onlyCompleteInput.checked || checkbox.dataset.complete === 'true';
+					const matches_new = !onlyNewInput.checked || checkbox.dataset.exported !== 'true';
+					const matches_type = selected_type === 'all' || checkbox.dataset.kind === selected_type;
+					const matches_last_scheduled = !lastScheduledInput.value || checkbox.dataset.latestScheduledDate === lastScheduledInput.value;
+					checkbox.checked = matches_complete && matches_new && matches_type && matches_last_scheduled;
+				});
+			}
+
+			selectAllBtn.addEventListener('click', () => {
+				eventCheckboxes.forEach((entry) => {
+					entry.checkbox.checked = true;
+				});
+			});
+
+			clearBtn.addEventListener('click', () => {
+				eventCheckboxes.forEach((entry) => {
+					entry.checkbox.checked = false;
+				});
+			});
+
+			resetAllBtn.addEventListener('click', () => {
+				send({
+					type: 'certificate_export_reset',
+					tournament_key: curt.key,
+					all: true,
+				}, (err, response) => {
+					if (err) {
+						return cerror.net(err);
+					}
+					curt.certificate_exports = response && response.certificate_exports ? response.certificate_exports : {};
+					update_event_statuses();
+				});
+			});
+
+			applyQuickFilterBtn.addEventListener('click', apply_quick_filters);
+			countInput.addEventListener('input', update_event_statuses);
+			title1Input.addEventListener('input', () => {
+				schedule_certificate_export_settings_save({
+					certificate_title_line_1: title1Input.value,
+				});
+			});
+			title2Input.addEventListener('input', () => {
+				schedule_certificate_export_settings_save({
+					certificate_title_line_2: title2Input.value,
+				});
+			});
+			dateInput.addEventListener('change', () => {
+				save_certificate_export_settings({
+					certificate_export_date: dateInput.value,
+				});
+			});
+			countInput.addEventListener('change', () => {
+				save_certificate_export_settings({
+					certificate_export_max_place: Number(countInput.value || 0) || 3,
+				});
+			});
+			eventCheckboxes.forEach((entry) => {
+				entry.resetBtn.addEventListener('click', () => {
+					send({
+						type: 'certificate_export_reset',
+						tournament_key: curt.key,
+						event_name: entry.event_option.event_name,
+					}, (err, response) => {
+						if (err) {
+							return cerror.net(err);
+						}
+						curt.certificate_exports = response && response.certificate_exports ? response.certificate_exports : {};
+						update_event_statuses();
+					});
+				});
+			});
+			update_event_statuses();
+			apply_quick_filters();
+
+			const actions = uiu.el(form, 'div', { style: 'margin-top: 1.5em;' });
+			const exportCsvBtn = uiu.el(actions, 'button', {
+				type: 'button',
+				class: 'match_save_button',
+			}, 'CSV exportieren');
+			const exportXlsxBtn = uiu.el(actions, 'button', {
+				type: 'button',
+				class: 'match_save_button',
+				style: 'margin-left: 0.5em;',
+			}, 'XLSX exportieren');
+			const cancelBtn = uiu.el(actions, 'button', {
+				type: 'button',
+				class: 'match_save_button',
+				style: 'margin-left: 0.5em;',
+			}, 'Zurück');
+
+			function set_certificate_export_buttons_disabled(disabled) {
+				if (disabled) {
+					exportCsvBtn.setAttribute('disabled', 'disabled');
+					exportXlsxBtn.setAttribute('disabled', 'disabled');
+					return;
+				}
+				exportCsvBtn.removeAttribute('disabled');
+				exportXlsxBtn.removeAttribute('disabled');
+			}
+
+			function handle_certificate_export(format) {
+				const selected_event_names = new Set(
+					eventCheckboxes
+						.filter((entry) => entry.checkbox.checked)
+						.map((entry) => entry.checkbox.getAttribute('data-event-name'))
+						.filter(Boolean)
+				);
+				if (selected_event_names.size === 0) {
+					alert('Bitte mindestens eine Disziplin auswählen.');
+					return;
+				}
+				set_certificate_export_buttons_disabled(true);
+				let releaseTimeout = window.setTimeout(() => {
+					releaseTimeout = null;
+					set_certificate_export_buttons_disabled(false);
+				}, 5000);
+				try {
+					ccsvexport.export_certificate_file(format, {
+						veranstaltung_1: title1Input.value,
+						veranstaltung_2: title2Input.value,
+						datum: dateInput.value,
+						max_place: Number(countInput.value || 0),
+						selected_event_names,
+					});
+				} catch (err) {
+					if (releaseTimeout != null) {
+						window.clearTimeout(releaseTimeout);
+					}
+					set_certificate_export_buttons_disabled(false);
+					cerror.net(err);
+					return;
+				}
+				save_certificate_export_settings({
+					certificate_title_line_1: title1Input.value,
+					certificate_title_line_2: title2Input.value,
+					certificate_export_date: dateInput.value,
+					certificate_export_max_place: Number(countInput.value || 0) || 3,
+				});
+				send({
+					type: 'certificate_export_mark',
+					tournament_key: curt.key,
+					event_names: [...selected_event_names],
+				}, (err, response) => {
+					if (releaseTimeout != null) {
+						window.clearTimeout(releaseTimeout);
+					}
+					set_certificate_export_buttons_disabled(false);
+					if (err) {
+						return cerror.net(err);
+					}
+					curt.certificate_exports = response && response.certificate_exports ? response.certificate_exports : {};
+					update_event_statuses();
+				});
+			}
+
+			exportCsvBtn.addEventListener('click', () => {
+				handle_certificate_export('csv');
+			});
+			exportXlsxBtn.addEventListener('click', () => {
+				handle_certificate_export('xlsx');
+			});
+
+			cancelBtn.addEventListener('click', _cancel_ui_certificate_export);
+		}
 	}
 
 	function build_show_toprow_right_items() {
@@ -1625,21 +2150,39 @@ var ctournament = (function() {
 		});
 	}
 
-	function render_show_toprow() {
-		toprow.set([{
-			label: ci18n('Tournaments'),
-			func: ui_list,
-		}, {
-			label: curt.name || curt.key,
-			func: ui_show,
-			'class': 'ct_name',
-		}], build_show_toprow_right_items());
+	function render_service_toprow(left_items) {
+		toprow.set(left_items, build_show_toprow_right_items());
 		ensure_btp_next_fetch_countdown();
 		ensure_speech_output_badge_listener();
 		bts_status_changed({ val: curt.status || { status: 'connected', message: '' } });
 		btp_status_changed({ val: curt.btp_status });
 		ticker_status_changed({ val: curt.ticker_status || { status: 'deactivated', message: '' } });
 		update_speech_output_badge();
+	}
+
+	function render_show_toprow() {
+		render_service_toprow([{
+			label: ci18n('Tournaments'),
+			func: ui_list,
+		}, {
+			label: curt.name || curt.key,
+			func: ui_show,
+			'class': 'ct_name',
+		}]);
+	}
+
+	function render_edit_toprow() {
+		render_service_toprow([{
+			label: ci18n('Tournaments'),
+			func: ui_list,
+		}, {
+			label: curt.name || curt.key,
+			func: ui_show,
+			'class': 'ct_name',
+		}, {
+			label: ci18n('edit tournament'),
+			func: ui_edit,
+		}]);
 	}
 
 	function format_btp_next_fetch_remaining(ms_remaining) {
@@ -1650,7 +2193,7 @@ var ctournament = (function() {
 	}
 
 	function update_btp_next_fetch_countdown() {
-		const countdown = uiu.qs('.btp_status_badge');
+		const countdown = document.querySelector('.btp_status_badge');
 		if (!countdown || !curt) {
 			return;
 		}
@@ -1766,6 +2309,13 @@ var ctournament = (function() {
 		ticker_status: ticker_status_changed,
 	}));
 
+	_route_single(/t\/([a-z0-9]+)\/certificate_export$/, ui_certificate_export, change.default_handler(ui_certificate_export, {
+		score: ui_certificate_export,
+		match_edit: ui_certificate_export,
+		match_remove: ui_certificate_export,
+		update_player_status: ui_certificate_export,
+	}));
+
 	function render_settings(target) {
 		const settings_div = uiu.el(target, 'div', 'metadata_right_container_2');
 		uiu.el(settings_div, 'h3', {}, 'Turnier-Einstellungen');
@@ -1865,17 +2415,7 @@ var ctournament = (function() {
 	function ui_edit() {
 		current_view = 'edit';
 		crouting.set('t/:key/edit', { key: curt.key });
-		toprow.set([{
-			label: ci18n('Tournaments'),
-			func: ui_list,
-		}, {
-			label: curt.name || curt.key,
-			func: ui_show,
-			'class': 'ct_name',
-		}, {
-			label: ci18n('edit tournament'),
-			func: ui_edit,
-		}]);
+		render_edit_toprow();
 
 		const main = uiu.qs('.main');
 		uiu.empty(main);
@@ -2347,31 +2887,22 @@ var ctournament = (function() {
 
 			const default_display_fieldset = uiu.el(devices_div, 'fieldset');
 			// Default display
-			const cur_dm_style = curt.dm_style || 'international';
-			const dm_style_label = uiu.el(default_display_fieldset, 'label');
-			uiu.el(dm_style_label, 'span', {}, ci18n('tournament:edit:dm_style'));
-			const dm_style_select = uiu.el(dm_style_label, 'select', {
-				name: 'dm_style',
-				required: 'required',
-			});
-			const all_dm_styles = displaymode.ALL_STYLES;
-			for (const s of all_dm_styles) {
-				const s_attrs = {
-					value: s,
-				};
-				if (s === cur_dm_style) {
-					s_attrs.selected = 'selected';
-				}
-				uiu.el(dm_style_select, 'option', s_attrs, s);
-			}
-				input.dm_style = dm_style_select;
-				bind_live_prop(input.dm_style, 'dm_style');
-
 			const displaysettings_style_label = uiu.el(default_display_fieldset, 'label');
 			uiu.el(displaysettings_style_label, 'span', {}, ci18n('tournament:edit:displaysettings_general'));
 
-				input.displaysettings_general = createGeneralDisplaySettingsSelectBox(displaysettings_style_label, curt.displaysettings_general ? curt.displaysettings_general : "default");
+				input.displaysettings_general = createGeneralDisplaySettingsSelectBox(displaysettings_style_label, curt.displaysettings_general ? curt.displaysettings_general : "default", {
+					filterFn: (displaysetting) => displaysetting.devicemode === 'display',
+				});
 				bind_live_prop(input.displaysettings_general, 'displaysettings_general');
+
+			const tablet_displaysettings_style_label = uiu.el(default_display_fieldset, 'label');
+			uiu.el(tablet_displaysettings_style_label, 'span', {}, ci18n('tournament:edit:displaysettings_general_tablet'));
+
+				input.displaysettings_general_tablet = createGeneralDisplaySettingsSelectBox(tablet_displaysettings_style_label, curt.displaysettings_general_tablet || "", {
+					fieldName: 'displaysettings_general_tablet',
+					filterFn: (displaysetting) => displaysetting.devicemode === 'umpire',
+				});
+				bind_live_prop(input.displaysettings_general_tablet, 'displaysettings_general_tablet');
 
 			const general_displaysettings_div = uiu.el(devices_div, 'div', 'general_displaysettings');
 			render_general_displaysettings(general_displaysettings_div);
@@ -2452,6 +2983,8 @@ var ctournament = (function() {
 	_route_single(/t\/([a-z0-9]+)\/edit$/, ui_edit, change.default_handler(_update_all_ui_elements_edit, {
 		update_general_displaysettings: update_general_displaysettings,
 		update_player_status: update_player_status,
+		btp_status: btp_status_changed,
+		ticker_status: ticker_status_changed,
 	}));
 
 		function update_scoring_formats() {
@@ -3208,12 +3741,26 @@ var ctournament = (function() {
 		});
 		
 		uiu.el(main, 'h3',  'edit', ci18n('tournament:edit:general_displaysettings'));
+		const create_actions = uiu.el(main, 'div', { style: 'margin: 0.5em 0 1em;' });
+		const create_display_btn = uiu.el(create_actions, 'button', {
+			type: 'button',
+		}, 'Neue Displayeinstellung');
+		const create_tablet_btn = uiu.el(create_actions, 'button', {
+			type: 'button',
+			style: 'margin-left: 0.5em;',
+		}, 'Neue Tableteinstellung');
+		create_display_btn.addEventListener('click', () => {
+			ui_create_display_setting_from_default('display');
+		});
+		create_tablet_btn.addEventListener('click', () => {
+			ui_create_display_setting_from_default('umpire');
+		});
 		const display_settings_table = uiu.el(main, 'table');
 		const display_settings_tbody = uiu.el(display_settings_table, 'tbody');
 		const tr = uiu.el(display_settings_tbody, 'tr');
-		uiu.el(tr, 'th', {}, ci18n('tournament:edit:displays:setting'));
-		uiu.el(tr, 'th', {}, ci18n('tournament:edit:displays:description'));
-		uiu.el(tr, 'th', {}, "");
+		uiu.el(tr, 'th', {}, ci18n('tournament:edit:displaysettings:name'));
+		uiu.el(tr, 'th', {}, ci18n('tournament:edit:displaysettings:mode'));
+		uiu.el(tr, 'th', {}, ci18n('tournament:edit:displaysettings:actions'));
 
 		for (const s of curt.displaysettings) {
 			const tr = uiu.el(display_settings_tbody, 'tr', { 'data-displaysetting_id': s.id });
@@ -3225,6 +3772,7 @@ var ctournament = (function() {
 		uiu.el(parrent, 'th', {}, s.description ||s.id);
 		const description_td = uiu.el(parrent, 'td', {}, s.devicemode + (s.devicemode == 'display' ? ' (' + s.displaymode_style + ')' : ''));
 		const actions_td = uiu.el(parrent, 'td', {});
+		const is_default_setting = s.id === curt.displaysettings_general || s.id === curt.displaysettings_general_tablet;
 		const edit_btn = uiu.el(actions_td, 'button', {
 			'data-display_setting_id': s.id,
 		}, 'Edit');
@@ -3238,7 +3786,7 @@ var ctournament = (function() {
 			'data-display-setting-id': s.id,
 		}, 'Delete');
 
-		if (used_configs.has(s.id)) {
+		if (used_configs.has(s.id) || is_default_setting) {
 			delete_btn.setAttribute('disabled', 'disabled');
 		}
 
@@ -3275,25 +3823,57 @@ var ctournament = (function() {
 		ui_edit_display_setting(display_setting_id);
 	}
 
-	function ui_edit_display_setting(display_setting_id) {
-		const display_setting = structuredClone(utils.find(curt.displaysettings, d => d.id === display_setting_id));
-		crouting.set('t/' + curt.key + '/edit/s/' + display_setting_id, {}, _cancel_ui_edit_display_setting);
+	function _build_new_display_setting_id(base_id, devicemode) {
+		const normalized_base = String(base_id || devicemode || 'display')
+			.replace(/\s+/g, '_')
+			.replace(/[^-a-zA-Z0-9_]/g, '');
+		return `${normalized_base}_${Date.now()}`;
+	}
+
+	function ui_create_display_setting_from_default(devicemode) {
+		const default_setting_id = devicemode === 'umpire'
+			? curt.displaysettings_general_tablet
+			: curt.displaysettings_general;
+		const base_setting = structuredClone(utils.find(curt.displaysettings, d => d.id === default_setting_id));
+		if (!base_setting) {
+			alert('Keine passende Standardeinstellung gefunden.');
+			return;
+		}
+		base_setting.id = _build_new_display_setting_id(base_setting.id, devicemode);
+		base_setting.description = `${base_setting.description || base_setting.id} Kopie`;
+		base_setting.devicemode = devicemode;
+		ui_edit_display_setting(base_setting.id, {
+			display_setting: base_setting,
+			is_new: true,
+		});
+	}
+
+	function ui_edit_display_setting(display_setting_id, opts = {}) {
+		const is_new = !!opts.is_new;
+		const display_setting = structuredClone(opts.display_setting || utils.find(curt.displaysettings, d => d.id === display_setting_id));
+		if (!display_setting) {
+			return;
+		}
+		if (!is_new) {
+			crouting.set('t/' + curt.key + '/edit/s/' + display_setting_id, {}, _cancel_ui_edit_display_setting);
+		}
 
 		cbts_utils.esc_stack_push(_cancel_ui_edit_display_setting);
 
 		const body = uiu.qs('body');
 		const dialog_bg = uiu.el(body, 'div', 'dialog_bg display_setting_edit_dialog', {
 		 	'data-display_setting_id': display_setting_id,
+			'data-is-new': is_new ? 'true' : 'false',
 		});
-		const dialog = uiu.el(dialog_bg, 'div', 'dialog');
+		const dialog = uiu.el(dialog_bg, 'div', 'dialog display_setting_dialog');
 
-		uiu.el(dialog, 'h3', {}, ci18n('Edit display setting'));
+		uiu.el(dialog, 'h3', {}, is_new ? 'Displayeinstellung anlegen' : ci18n('Edit display setting'));
 
 		const form = uiu.el(dialog, 'form');
 		uiu.el(form, 'input', {
 			type: 'hidden',
 			name: 'display_setting_id',
-			value: display_setting_id,
+			value: display_setting.id,
 		});
 		render_edit_display_setting(form, display_setting);
 
@@ -3310,7 +3890,7 @@ var ctournament = (function() {
 			const displaysetting = create_displaysettings_object(d);
 
 			send_with_live_status({
-				type: 'edit_display_setting',
+				type: is_new ? 'create_display_setting' : 'edit_display_setting',
 				tournament_key: curt.key,
 				displaysetting: displaysetting,
 			}, err => {
@@ -3334,9 +3914,650 @@ var ctournament = (function() {
 		ui_edit_display_setting(display_setting_id);
 	}));
 
+	function build_display_setting_preview_event() {
+		return {
+			tournament_name: curt && (curt.name || curt.key) || 'Turnier',
+			team_competition: false,
+			team_names: ['Links', 'Rechts'],
+			courts: [{
+				id: 1,
+				court_id: 1,
+				num: 1,
+				label: '1',
+				match_id: 'preview_match',
+			}],
+			matches: [{
+				setup: {
+					match_id: 'preview_match',
+					match_name: 'Finale',
+					event_name: 'HD O19',
+					is_doubles: true,
+					teams: [{
+						name: 'BSC Hastedt',
+						players: [{
+							name: 'Max Mustermann',
+							firstname: 'Max',
+							lastname: 'Mustermann',
+						}, {
+							name: 'Paul Beispiel',
+							firstname: 'Paul',
+							lastname: 'Beispiel',
+						}],
+					}, {
+						name: 'TV Bremen-Walle',
+						players: [{
+							name: 'Jan Vorbild',
+							firstname: 'Jan',
+							lastname: 'Vorbild',
+						}, {
+							name: 'Tom Muster',
+							firstname: 'Tom',
+							lastname: 'Muster',
+						}],
+					}],
+				},
+				network_score: [[21, 18], [12, 21], [19, 17]],
+				network_team1_serving: true,
+				network_teams_player1_even: [true, false],
+			}],
+		};
+	}
+
+	function get_display_setting_form_style(form) {
+		const devicemodeInput = form.querySelector('[name="devicemode"]');
+		const displayStyleInput = form.querySelector('[name="displaymode_style"]');
+		if (devicemodeInput && devicemodeInput.value === 'umpire') {
+			return 'umpire';
+		}
+		return displayStyleInput ? displayStyleInput.value : true;
+	}
+
+	function build_bup_preview_presses(setup) {
+		const team1Left = true;
+		const isDoubles = !!(setup && setup.is_doubles);
+		return [{
+			type: 'pick_side',
+			team1_left: team1Left,
+			timestamp: Date.now() - 120000,
+		}, {
+			type: 'pick_server',
+			team_id: 0,
+			player_id: 0,
+			timestamp: Date.now() - 118000,
+		}, {
+			type: 'pick_receiver',
+			team_id: 1,
+			player_id: isDoubles ? 1 : 0,
+			timestamp: Date.now() - 116000,
+		}, {
+			type: 'love-all',
+			timestamp: Date.now() - 114000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 108000,
+		}, {
+			type: 'score',
+			side: 'right',
+			timestamp: Date.now() - 104000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 98000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 94000,
+		}, {
+			type: 'score',
+			side: 'right',
+			timestamp: Date.now() - 90000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 86000,
+		}, {
+			type: 'score',
+			side: 'right',
+			timestamp: Date.now() - 82000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 78000,
+		}, {
+			type: 'score',
+			side: 'right',
+			timestamp: Date.now() - 76000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 72000,
+		}, {
+			type: 'score',
+			side: 'right',
+			timestamp: Date.now() - 68000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 64000,
+		}, {
+			type: 'score',
+			side: 'right',
+			timestamp: Date.now() - 60000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 56000,
+		}, {
+			type: 'score',
+			side: 'right',
+			timestamp: Date.now() - 52000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 48000,
+		}, {
+			type: 'score',
+			side: 'right',
+			timestamp: Date.now() - 44000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 40000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 36000,
+		}, {
+			type: 'shuttle',
+			timestamp: Date.now() - 32000,
+		}];
+	}
+
+	function build_bup_preview_pause_presses(setup) {
+		const team1Left = true;
+		const isDoubles = !!(setup && setup.is_doubles);
+		return [{
+			type: 'pick_side',
+			team1_left: team1Left,
+			timestamp: Date.now() - 90000,
+		}, {
+			type: 'pick_server',
+			team_id: 0,
+			player_id: 0,
+			timestamp: Date.now() - 88000,
+		}, {
+			type: 'pick_receiver',
+			team_id: 1,
+			player_id: isDoubles ? 1 : 0,
+			timestamp: Date.now() - 86000,
+		}, {
+			type: 'love-all',
+			timestamp: Date.now() - 84000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 78000,
+		}, {
+			type: 'score',
+			side: 'right',
+			timestamp: Date.now() - 74000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 70000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 66000,
+		}, {
+			type: 'score',
+			side: 'right',
+			timestamp: Date.now() - 62000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 58000,
+		}, {
+			type: 'score',
+			side: 'right',
+			timestamp: Date.now() - 54000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 50000,
+		}, {
+			type: 'score',
+			side: 'right',
+			timestamp: Date.now() - 46000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 42000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 38000,
+		}, {
+			type: 'score',
+			side: 'left',
+			timestamp: Date.now() - 8000,
+		}, {
+			type: 'shuttle',
+			timestamp: Date.now() - 5000,
+		}];
+	}
+
+	function format_display_setting_preview_name(player, settings) {
+		if (!player) {
+			return '';
+		}
+		if (settings && settings.d_show_middle_name && player.name) {
+			return player.name;
+		}
+		if (player.firstname && player.lastname) {
+			return `${player.firstname} ${player.lastname}`;
+		}
+		return player.name || '';
+	}
+
+	function render_display_setting_badge(container, text, style) {
+		uiu.el(container, 'span', {
+			style: [
+				'display:inline-flex',
+				'align-items:center',
+				'padding:0.18em 0.55em',
+				'border-radius:999px',
+				'font-size:0.8em',
+				'font-weight:600',
+				style || '',
+			].join(';'),
+		}, text);
+	}
+
+	function render_display_mode_preview(target, settings, previewType = 'primary') {
+		const event = build_display_setting_preview_event();
+		const match = event.matches[0];
+		const colors = displaymode.calc_colors(settings, event, match);
+		const score = previewType === 'live'
+			? [11, 8]
+			: (match.network_score[match.network_score.length - 1] || [0, 0]);
+
+		uiu.empty(target);
+
+		target.style.background = colors.bg;
+		target.style.color = colors.fg;
+		target.style.border = `1px solid ${colors.border}`;
+		target.style.borderRadius = '18px';
+		target.style.padding = '1rem';
+		target.style.minHeight = '260px';
+		target.style.boxSizing = 'border-box';
+		target.style.position = 'relative';
+		target.style.overflow = 'hidden';
+		target.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.05)';
+
+		if (settings.d_show_competition || settings.d_show_round || settings.d_show_court_number) {
+			const meta = uiu.el(target, 'div', {
+				style: 'display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.85rem;',
+			});
+			if (settings.d_show_competition) {
+				render_display_setting_badge(meta, match.setup.event_name, `background:${colors.bg3};color:${colors.fg};`);
+			}
+			if (settings.d_show_round) {
+				render_display_setting_badge(meta, match.setup.match_name, `background:${colors.bg4};color:${colors.fg2};`);
+			}
+			if (settings.d_show_court_number) {
+				render_display_setting_badge(meta, `Feld ${event.courts[0].label}`, `background:${colors.bg2};color:${colors.fgdark};`);
+			}
+		}
+
+		const grid = uiu.el(target, 'div', {
+			style: 'display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;',
+		});
+
+		const renderTeam = (team, teamId) => {
+			const teamForeground = colors[String(teamId)] || colors.fg;
+			const teamBackground = colors['b' + teamId] || colors.bg3;
+			const box = uiu.el(grid, 'div', {
+				style: [
+					'border-radius:14px',
+					'padding:0.85rem',
+					'min-height:150px',
+					`background:${teamBackground}`,
+					`color:${teamForeground}`,
+					'display:flex',
+					'flex-direction:column',
+					'justify-content:space-between',
+				].join(';'),
+			});
+			uiu.el(box, 'div', {
+				style: 'font-size:0.78rem;opacity:0.9;text-transform:uppercase;letter-spacing:0.06em;',
+			}, team.name);
+			const players = uiu.el(box, 'div', {
+				style: 'display:flex;flex-direction:column;gap:0.4rem;margin:0.7rem 0;',
+			});
+			team.players.forEach((player, playerIdx) => {
+				const isServing = teamId === 0 && playerIdx === 0;
+				const isReceiving = settings.d_show_doubles_receiving && teamId === 1 && playerIdx === 0;
+				uiu.el(players, 'div', {
+					style: [
+						'display:flex',
+						'align-items:center',
+						'justify-content:space-between',
+						'gap:0.5rem',
+						`color:${isServing ? colors.serv2 : isReceiving ? colors.recv : teamForeground}`,
+						'font-weight:600',
+					].join(';'),
+				}, format_display_setting_preview_name(player, settings));
+			});
+			if (settings.d_show_pause && previewType === 'live') {
+				const timerRow = uiu.el(box, 'div', {
+					style: 'display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;',
+				});
+				uiu.el(timerRow, 'span', {
+					style: `color:${colors.tim_blue};`,
+				}, 'Pause');
+				uiu.el(timerRow, 'span', {
+					style: `color:${colors.tim_active};font-weight:700;`,
+				}, '00:37');
+			}
+			return box;
+		};
+
+		renderTeam(match.setup.teams[0], 0);
+
+		const scoreBox = uiu.el(grid, 'div', {
+			style: 'display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:90px;gap:0.35rem;',
+		});
+		uiu.el(scoreBox, 'div', {
+			style: `font-size:2.4rem;font-weight:800;color:${colors.fg};line-height:1;`,
+		}, `${score[0]}:${score[1]}`);
+		uiu.el(scoreBox, 'div', {
+			style: `font-size:0.8rem;color:${colors.fg2};text-transform:uppercase;letter-spacing:0.08em;`,
+		}, settings.displaymode_style || 'top+list');
+		renderTeam(match.setup.teams[1], 1);
+	}
+
+	function render_umpire_mode_preview(target, settings, previewType = 'primary') {
+		uiu.empty(target);
+		target.style.background = '#151515';
+		target.style.color = '#f5f5f5';
+		target.style.border = '1px solid #333';
+		target.style.borderRadius = '18px';
+		target.style.padding = '1rem';
+		target.style.minHeight = '260px';
+		target.style.boxSizing = 'border-box';
+
+		if (previewType === 'primary') {
+			const top = uiu.el(target, 'div', {
+				style: 'display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:0.9rem;',
+			});
+			const labels = uiu.el(top, 'div', {
+				style: 'display:flex;gap:0.5rem;flex-wrap:wrap;',
+			});
+			render_display_setting_badge(labels, `Tablet: ${settings.style || 'default'}`, 'background:#2b2b2b;color:#fff;');
+			if (settings.neversettings) {
+				render_display_setting_badge(labels, 'Settings gesperrt', 'background:#8b1e1e;color:#fff;');
+			}
+			uiu.el(top, 'div', {
+				style: 'font-size:0.9rem;color:#bdbdbd;',
+			}, 'Spielauswahl');
+
+			const matches = uiu.el(target, 'div', {
+				style: 'display:flex;flex-direction:column;gap:0.6rem;',
+			});
+			[
+				{ event: 'ME U17 HF', court: 'Feld 1', state: 'aktiv' },
+				{ event: 'JE U13 Finale', court: 'Feld 2', state: 'bereit' },
+				{ event: 'GD O19', court: 'Feld 3', state: 'wartet' },
+			].forEach((row, index) => {
+				const item = uiu.el(matches, 'div', {
+					style: [
+						'display:grid',
+						'grid-template-columns:minmax(0,1fr) auto auto',
+						'gap:0.75rem',
+						'align-items:center',
+						'border-radius:12px',
+						'padding:0.8rem 0.9rem',
+						`background:${index === 0 ? '#2b5d8a' : '#222'}`
+					].join(';'),
+				});
+				uiu.el(item, 'div', { style: 'font-weight:700;' }, row.event);
+				uiu.el(item, 'div', { style: 'color:#cfd8dc;font-size:0.9rem;' }, row.court);
+				uiu.el(item, 'div', { style: 'color:#cfd8dc;font-size:0.9rem;text-transform:uppercase;' }, row.state);
+			});
+			return;
+		}
+
+		const top = uiu.el(target, 'div', {
+			style: 'display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:0.9rem;',
+		});
+		const labels = uiu.el(top, 'div', {
+			style: 'display:flex;gap:0.5rem;flex-wrap:wrap;',
+		});
+		render_display_setting_badge(labels, settings.shuttle_counter ? 'Federballzähler' : 'Live-Spiel', 'background:#2b2b2b;color:#fff;');
+		if (settings.editmode_doubleclick) {
+			render_display_setting_badge(labels, 'Doubleclick', 'background:#1b4965;color:#fff;');
+		}
+		uiu.el(top, 'div', {
+			style: 'font-size:0.9rem;color:#bdbdbd;',
+		}, `Klickmodus: ${settings.click_mode || 'auto'}`);
+
+		const score = uiu.el(target, 'div', {
+			style: 'display:grid;grid-template-columns:1fr auto 1fr;gap:0.75rem;align-items:center;margin-bottom:1rem;',
+		});
+		const left = uiu.el(score, 'div', {
+			style: 'background:#222;border-radius:14px;padding:0.8rem;',
+		});
+		uiu.el(left, 'div', { style: 'font-size:0.78rem;color:#a0a0a0;margin-bottom:0.35rem;' }, 'Heim');
+		uiu.el(left, 'div', { style: 'font-size:1rem;font-weight:700;' }, 'Max Mustermann / Paul Beispiel');
+		const center = uiu.el(score, 'div', {
+			style: 'font-size:2rem;font-weight:800;letter-spacing:0.04em;',
+		}, '19:17');
+		center.style.color = settings.negative_timers ? '#ffcc66' : '#ffffff';
+		const right = uiu.el(score, 'div', {
+			style: 'background:#222;border-radius:14px;padding:0.8rem;text-align:right;',
+		});
+		uiu.el(right, 'div', { style: 'font-size:0.78rem;color:#a0a0a0;margin-bottom:0.35rem;' }, 'Gast');
+		uiu.el(right, 'div', { style: 'font-size:1rem;font-weight:700;' }, 'Jan Vorbild / Tom Muster');
+
+		const controls = uiu.el(target, 'div', {
+			style: 'display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0.55rem;',
+		});
+		[
+			{ label: settings.shuttle_counter ? 'Shuttles 3' : 'Punkt Links', bg: settings.shuttle_counter ? '#3b3b3b' : '#1f7a45' },
+			{ label: settings.negative_timers ? '-00:12' : 'Punkt Rechts', bg: settings.negative_timers ? '#7a5a1f' : '#9b3d1e' },
+			{ label: settings.editmode_doubleclick ? 'Manuell: Doppelklick' : 'Pause', bg: settings.editmode_doubleclick ? '#1b4965' : '#2b5d8a' },
+			{ label: settings.show_announcements && settings.show_announcements !== 'none' ? 'Ansage aktiv' : 'Ansage aus', bg: '#4a2b5d' },
+		].forEach((button) => {
+			uiu.el(controls, 'div', {
+				style: [
+					`background:${button.bg}`,
+					'border-radius:12px',
+					'padding:0.8rem 0.65rem',
+					'text-align:center',
+					'font-weight:700',
+				].join(';'),
+			}, button.label);
+		});
+	}
+
+	function render_display_setting_preview(previewBody, form, previewType = 'primary') {
+		if (!previewBody) {
+			return;
+		}
+		const previewSettings = create_displaysettings_object(Object.fromEntries(new FormData(form).entries()));
+
+		if (previewSettings.devicemode === 'umpire') {
+			uiu.empty(previewBody);
+			const previewBupSettings = JSON.stringify(Object.assign({}, previewSettings, {
+				court_id: previewType === 'live' ? 'tdemo_5' : 'referee',
+				court_description: '',
+				language: previewSettings.language || 'de',
+				style: previewSettings.style || 'default',
+				neversettings: false,
+			}));
+			let previousBupSettings = null;
+			try {
+				previousBupSettings = window.localStorage.getItem('bup_settings');
+				window.localStorage.setItem('bup_settings', previewBupSettings);
+			} catch (_err) {
+				previousBupSettings = null;
+			}
+			const outer = uiu.el(previewBody, 'div', {
+				class: 'bup_preview_outer',
+				style: 'width:100%;',
+			});
+			const previews = uiu.el(outer, 'div', {
+				class: 'bup_preview_panels',
+				style: 'display:flex;flex-direction:column;gap:1rem;',
+			});
+			const panel = uiu.el(previews, 'div', {
+				class: previewType === 'live' ? 'bup_preview_panel_live' : 'bup_preview_panel_primary',
+			});
+			const frame = uiu.el(panel, 'div', {
+				style: [
+					'position:relative',
+					'width:100%',
+					'padding:0.45rem',
+					'border-radius:16px',
+					'background:#0f0f10',
+					'box-shadow:0 14px 30px rgba(0,0,0,0.18)',
+				].join(';'),
+			});
+			const viewport = uiu.el(frame, 'div', {
+				class: 'bup_preview_viewport',
+				style: [
+					'position:relative',
+					'background:#fff',
+					'border-radius:12px',
+					'overflow:hidden',
+					'width:min(100%, 820px)',
+					'height:510px',
+				].join(';'),
+			});
+			const iframeSrc = previewType === 'live'
+				? `${window.location.origin}/bup/#tdemo&m=tdemo_match_42`
+				: `${window.location.origin}/bup/#tdemo&settings&court=referee&lang=de`;
+			const iframe = uiu.el(viewport, 'iframe', {
+				class: 'bup_preview_frame',
+				src: iframeSrc,
+				title: 'BUP Vorschau',
+				tabindex: '-1',
+			});
+			iframe.style.position = 'relative';
+			iframe.style.width = '200%';
+			iframe.style.height = '200%';
+			iframe.style.border = '0';
+			iframe.style.display = 'block';
+			iframe.style.pointerEvents = 'none';
+			iframe.style.transform = 'scale(0.5)';
+			iframe.style.transformOrigin = 'top left';
+			const updateDebug = (prefix) => {
+				try {
+				} catch (err) {
+				}
+			};
+			iframe.addEventListener('load', () => {
+				updateDebug('iframe: load');
+				window.setTimeout(() => updateDebug('iframe: load + 500ms'), 500);
+				window.setTimeout(() => {
+					try {
+						if (previousBupSettings === null) {
+							window.localStorage.removeItem('bup_settings');
+						} else {
+							window.localStorage.setItem('bup_settings', previousBupSettings);
+						}
+					} catch (_err) {
+					}
+				}, 1500);
+			});
+			return;
+		}
+
+		uiu.empty(previewBody);
+		const outer = uiu.el(previewBody, 'div', {
+			class: 'bup_preview_outer',
+			style: 'width:100%;',
+		});
+		const previews = uiu.el(outer, 'div', {
+			class: 'bup_preview_panels',
+			style: 'display:flex;flex-direction:column;gap:1rem;',
+		});
+		const panel = uiu.el(previews, 'div', {
+			class: previewType === 'live' ? 'bup_preview_panel_live' : 'bup_preview_panel_primary',
+		});
+		const frame = uiu.el(panel, 'div', {
+			style: [
+				'position:relative',
+				`padding:${previewSettings.devicemode === 'umpire' ? '0.45rem' : '0.85rem'}`,
+				`border-radius:${previewSettings.devicemode === 'umpire' ? '16px' : '22px'}`,
+				'background:#0f0f10',
+				'box-shadow:0 14px 30px rgba(0,0,0,0.18)',
+			].join(';'),
+		});
+		const viewport = uiu.el(frame, 'div', {
+			class: 'bup_preview_viewport',
+			style: [
+				'position:relative',
+				`background:${previewSettings.devicemode === 'umpire' ? '#111' : '#111'}`,
+				`border-radius:${previewSettings.devicemode === 'umpire' ? '12px' : '18px'}`,
+				'overflow:hidden',
+				'aspect-ratio:16 / 9',
+				'width:100%',
+			].join(';'),
+		});
+		if (previewSettings.devicemode === 'umpire') {
+			render_umpire_mode_preview(viewport, previewSettings, previewType);
+		}
+		else {
+			render_display_mode_preview(viewport, previewSettings, previewType);
+		}
+	}
+
 	function render_edit_display_setting(form, display_setting) {
 		const edit_display_setting_container = uiu.el(form, 'div', 'edit_display_setting_container');
-		const id_div = uiu.el(edit_display_setting_container, 'div');
+		const createSettingsSection = (title, className = '') => {
+			const section = uiu.el(edit_display_setting_container, 'section', {
+				class: `display_setting_section ${className}`.trim(),
+			});
+			if (title) {
+				uiu.el(section, 'h4', {
+					class: 'display_setting_section_title',
+				}, title);
+			}
+			return section;
+		};
+		const createPreviewLayout = (settingsTitle, previewTitle, className = '') => {
+			const section = createSettingsSection('', `display_setting_preview_layout ${className}`.trim());
+			const settingsColumn = uiu.el(section, 'div', {
+				class: 'display_setting_section_column display_setting_settings_column',
+			});
+			let settingsTitleEl = null;
+			if (settingsTitle) {
+				settingsTitleEl = uiu.el(settingsColumn, 'h4', {
+					class: 'display_setting_section_title',
+				}, settingsTitle);
+			}
+			const previewColumn = uiu.el(section, 'div', {
+				class: 'display_setting_section_column display_setting_preview_section',
+			});
+			const previewBody = uiu.el(previewColumn, 'div', {
+				class: 'display_setting_preview_body',
+			});
+			return {
+				section,
+				settingsColumn,
+				settingsTitleEl,
+				previewColumn,
+				previewBody,
+			};
+		};
+		const metaSection = createSettingsSection('Allgemein', 'display_setting_meta_section');
+		const primaryLayout = createPreviewLayout('Spielauswahl', 'Vorschau');
+		const secondaryLayout = createPreviewLayout('Live-Spiel', 'Vorschau laufendes Spiel', 'display_setting_live_layout');
+
+		const id_div = uiu.el(metaSection, 'div');
 		uiu.el(id_div, 'span', 'display_setting_id', ci18n('display_setting:id'));
 		uiu.el(id_div, 'input', {
 			type: 'text',
@@ -3349,7 +4570,7 @@ var ctournament = (function() {
 		});
 
 
-		const description_div = uiu.el(edit_display_setting_container, 'div');
+		const description_div = uiu.el(metaSection, 'div');
 		uiu.el(description_div, 'span', 'display_setting_description', 'Description:');
 		uiu.el(description_div, 'input', {
 			type: 'text',
@@ -3364,27 +4585,113 @@ var ctournament = (function() {
 			'umpire',
 			'display'
 		];
+		const ALL_BUP_LANGUAGES = [
+			ci18n('display_setting:language_automatic'),
+			ci18n('display_setting:language_en'),
+			ci18n('display_setting:language_de'),
+			ci18n('display_setting:language_de-AT'),
+			ci18n('display_setting:language_de-CH'),
+			ci18n('display_setting:language_fr-CH'),
+			ci18n('display_setting:language_nl-BE'),
+		];
+		const SHORT_BUP_LANGUAGES = [
+			'auto',
+			'en',
+			'de',
+			'de-AT',
+			'de-CH',
+			'fr-CH',
+			'nl-BE'
+		];
+		const ALL_ASK_FULLSCREAN_MODES = [
+			'always',
+			'auto',
+			'never',
+		];
+		const ALL_ANNOUNCEMENT_MODES = [
+			'none',
+			'all',
+			'except-first',
+		];
+		const ALL_CLICK_MODES = [
+			'auto',
+			'click',
+			'touchstart',
+			'touchend',
+		];
+		const ALL_STYLE_MODES = [
+			'default',
+			'complete',
+			'clean',
+			'focus',
+			'hidden',
+		];
 
 
 		const calculated_style = (display_setting.devicemode === 'umpire' ? 'umpire' : display_setting.displaymode_style);
+		const is_default_display_setting = display_setting.id === curt.displaysettings_general;
+		const is_default_tablet_setting = display_setting.id === curt.displaysettings_general_tablet;
+		const is_protected_default = is_default_display_setting || is_default_tablet_setting;
+		const getCurrentDeviceMode = () => {
+			const enabledSelect = form.querySelector('select[name="devicemode"]:not([disabled])');
+			if (enabledSelect) {
+				return enabledSelect.value || '';
+			}
+			const hiddenInput = form.querySelector('input[name="devicemode"][type="hidden"]');
+			if (hiddenInput) {
+				return hiddenInput.value || '';
+			}
+			const anySelect = form.querySelector('select[name="devicemode"]');
+			return anySelect ? (anySelect.value || '') : '';
+		};
 
 
-		render_drop_down(edit_display_setting_container, ci18n('display_setting:devicemode'), 'devicemode', true, ALL_DEVICE_MODES, display_setting.devicemode || '');
-		const displaystyle_select = render_drop_down(edit_display_setting_container, ci18n('display_setting:style'), 'displaymode_style', (display_setting.devicemode === 'umpire' ? 'umpire' : true), displaymode.ALL_STYLES, display_setting.displaymode_style || '');
+		const devicemode_select = render_drop_down(
+			metaSection,
+			ci18n('display_setting:devicemode'),
+			'devicemode',
+			true,
+			ALL_DEVICE_MODES,
+			display_setting.devicemode || ''
+		);
+		if (is_protected_default) {
+			devicemode_select.setAttribute('disabled', 'disabled');
+			uiu.el(metaSection, 'input', {
+				type: 'hidden',
+				name: 'devicemode',
+				value: display_setting.devicemode || '',
+			});
+		}
+		const displaystyle_select = render_drop_down(primaryLayout.settingsColumn, ci18n('display_setting:style'), 'displaymode_style', (display_setting.devicemode === 'umpire' ? 'umpire' : true), displaymode.ALL_STYLES, display_setting.displaymode_style || '');
 		
 		displaystyle_select.addEventListener('change', (e) => {
 			const style = e.target;
 			update_edit_display_setting(style.value);
+			render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
+			render_display_setting_preview(secondaryLayout.previewBody, form, 'live');
+		});
+		const updateSecondarySectionMode = () => {
+			const isTablet = getCurrentDeviceMode() === 'umpire';
+			if (secondaryLayout.settingsTitleEl) {
+				secondaryLayout.settingsTitleEl.textContent = isTablet ? 'Live-Spiel' : 'Anzeige';
+			}
+			if (secondaryLayout.previewColumn) {
+				secondaryLayout.previewColumn.style.display = 'flex';
+			}
+			secondaryLayout.section.style.gridTemplateColumns = isTablet
+				? 'minmax(11rem, 14rem) minmax(0, 1fr)'
+				: 'minmax(11rem, 14rem) minmax(0, 1fr)';
+		};
+		devicemode_select.addEventListener('change', () => {
+			update_edit_display_setting(get_display_setting_form_style(form));
+			updateSecondarySectionMode();
+			render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
+			render_display_setting_preview(secondaryLayout.previewBody, form, 'live');
 		});
 		
-		render_check_box(edit_display_setting_container, ci18n('display_setting:show_pause'), 'show_pause', calculated_style, display_setting.d_show_pause);
-		render_check_box(edit_display_setting_container, ci18n('display_setting:show_court_number'), 'show_court_number', calculated_style, display_setting.d_show_court_number);
-		render_check_box(edit_display_setting_container, ci18n('display_setting:show_competition'), 'show_competition', calculated_style, display_setting.d_show_competition);
-		render_check_box(edit_display_setting_container, ci18n('display_setting:show_round'), 'show_round', calculated_style, display_setting.d_show_round);
-		render_check_box(edit_display_setting_container, ci18n('display_setting:show_middle_name'), 'show_middle_name', calculated_style, display_setting.d_show_middle_name);
-		render_check_box(edit_display_setting_container, ci18n('display_setting:show_doubles_receiving'), 'show_doubles_receiving', calculated_style, display_setting.d_show_doubles_receiving);
+		render_select_number(primaryLayout.settingsColumn, ci18n('display_setting:scale'), 'scale', calculated_style, display_setting.d_scale, 20, 500);
 		
-		const select_color_div = uiu.el(edit_display_setting_container, 'div', { style: 'display: block' });
+		const select_color_div = uiu.el(primaryLayout.settingsColumn, 'div', { style: 'display: block' });
 		const select_color_label = uiu.el(select_color_div, 'label', {}, ci18n('display_setting:colors'));
 		render_select_color(select_color_label, 'c0', calculated_style, display_setting.d_c0);
 		render_select_color(select_color_label, 'c1', calculated_style, display_setting.d_c1);
@@ -3407,28 +4714,11 @@ var ctournament = (function() {
 		render_select_color(select_color_label, 'crecv', calculated_style, display_setting.d_crecv);
 		render_select_color(select_color_label, 'ctim_blue', calculated_style, display_setting.d_ctim_blue);
 		render_select_color(select_color_label, 'ctim_active', calculated_style, display_setting.d_ctim_active);
-		render_check_box(edit_display_setting_container, ci18n('display_setting:use_team_colors'), 'team_colors', calculated_style, display_setting.d_team_colors);
-		render_select_number(edit_display_setting_container, ci18n('display_setting:scale'), 'scale', calculated_style, display_setting.d_scale, 20, 500);
-
-		const ALL_BUP_LANGUAGES = [
-			ci18n('display_setting:language_automatic'),
-			ci18n('display_setting:language_en'),
-			ci18n('display_setting:language_de'),
-			ci18n('display_setting:language_de-AT'),
-			ci18n('display_setting:language_de-CH'),
-			ci18n('display_setting:language_fr-CH'),
-			ci18n('display_setting:language_nl-BE'),
-		]
-
-		const SHORT_BUP_LANGUAGES = [
-			'auto',
-			'en',
-			'de',
-			'de-AT',
-			'de-CH',
-			'fr-CH',
-			'nl-BE'
-		]
+		uiu.visible(select_color_div, calculated_style !== 'umpire');
+		render_drop_down(primaryLayout.settingsColumn, ci18n('display_setting:language'), 'language', true, SHORT_BUP_LANGUAGES, display_setting.language, ALL_BUP_LANGUAGES);
+		render_drop_down(primaryLayout.settingsColumn, ci18n('display_setting:fullscreen_ask'), 'fullscreen_ask', true, ALL_ASK_FULLSCREAN_MODES, display_setting.fullscreen_ask || '');
+		render_drop_down(primaryLayout.settingsColumn, ci18n('display_setting:settings_style'), 'style', calculated_style, ALL_STYLE_MODES, display_setting.style || '');
+		render_check_box(primaryLayout.settingsColumn, ci18n('display_setting:neversettings'), 'neversettings', true, display_setting.neversettings);
 
 		// let current_language = '';
 
@@ -3439,49 +4729,36 @@ var ctournament = (function() {
 		// 	}
 		// }
 
-		render_drop_down(edit_display_setting_container, ci18n('display_setting:language'), 'language', true, SHORT_BUP_LANGUAGES, display_setting.language, ALL_BUP_LANGUAGES);
-
-
-		const ALL_ASK_FULLSCREAN_MODES = [
-			'always',
-			'auto',
-			'never',
-		];
-		render_drop_down(edit_display_setting_container, ci18n('display_setting:fullscreen_ask'), 'fullscreen_ask', true, ALL_ASK_FULLSCREAN_MODES, display_setting.fullscreen_ask || '');
-
-
-		const ALL_ANNOUNCEMENT_MODES = [
-			'none',
-			'all',
-			'except-first',
-		];
-		render_drop_down(edit_display_setting_container, ci18n('display_setting:show_announcements'), 'show_announcements', calculated_style, ALL_ANNOUNCEMENT_MODES, display_setting.show_announcements || '');
-
-		render_select_number(edit_display_setting_container, ci18n('display_setting:button_block_timeout'), 'button_block_timeout', calculated_style, display_setting.button_block_timeout, 0, 5000);
+		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:show_pause'), 'show_pause', calculated_style, display_setting.d_show_pause);
+		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:show_court_number'), 'show_court_number', calculated_style, display_setting.d_show_court_number);
+		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:show_competition'), 'show_competition', calculated_style, display_setting.d_show_competition);
+		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:show_round'), 'show_round', calculated_style, display_setting.d_show_round);
+		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:show_middle_name'), 'show_middle_name', calculated_style, display_setting.d_show_middle_name);
+		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:show_doubles_receiving'), 'show_doubles_receiving', calculated_style, display_setting.d_show_doubles_receiving);
+		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:use_team_colors'), 'team_colors', calculated_style, display_setting.d_team_colors);
+		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:shuttle_counter'), 'shuttle_counter', calculated_style, display_setting.shuttle_counter);
+		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:negative_timers'), 'negative_timers', calculated_style, display_setting.negative_timers);
+		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:editmode_doubleclick'), 'editmode_doubleclick', calculated_style, display_setting.editmode_doubleclick);
+		render_drop_down(secondaryLayout.settingsColumn, ci18n('display_setting:show_announcements'), 'show_announcements', calculated_style, ALL_ANNOUNCEMENT_MODES, display_setting.show_announcements || '');
+		render_drop_down(secondaryLayout.settingsColumn, ci18n('display_setting:click_mode'), 'click_mode', calculated_style, ALL_CLICK_MODES, display_setting.click_mode || '');
+		render_select_number(secondaryLayout.settingsColumn, ci18n('display_setting:button_block_timeout'), 'button_block_timeout', calculated_style, display_setting.button_block_timeout, 0, 5000);
 		
-		render_check_box(edit_display_setting_container, ci18n('display_setting:negative_timers'), 'negative_timers', calculated_style, display_setting.negative_timers);
-		render_check_box(edit_display_setting_container, ci18n('display_setting:shuttle_counter'), 'shuttle_counter', calculated_style, display_setting.shuttle_counter);
-		render_check_box(edit_display_setting_container, ci18n('display_setting:editmode_doubleclick'), 'editmode_doubleclick', calculated_style, display_setting.editmode_doubleclick);
+		const technicalSection = createSettingsSection('Technik', 'display_setting_technical_section');
+		render_select_number(technicalSection, ci18n('display_setting:network_timeout'), 'network_timeout', true, display_setting.network_timeout, 1, 600000);
+		render_select_number(technicalSection, ci18n('display_setting:network_update_interval'), 'network_update_interval', true, display_setting.network_update_interval, 1, 600000);
 
-		const ALL_CLICK_MODES = [
-			'auto',
-			'click',
-			'touchstart',
-			'touchend',
-		];
-		render_drop_down(edit_display_setting_container, ci18n('display_setting:click_mode'), 'click_mode', calculated_style, ALL_CLICK_MODES, display_setting.click_mode || '');
-		
-		const ALL_STYLE_MODES = [
-			'default',
-			'complete',
-			'clean',
-			'focus',
-			'hidden',
-		];
-
-		render_drop_down(edit_display_setting_container, ci18n('display_setting:settings_style'), 'style', calculated_style, ALL_STYLE_MODES, display_setting.style || '');
-		render_select_number(edit_display_setting_container, ci18n('display_setting:network_timeout'), 'network_timeout', true, display_setting.network_timeout, 1, 600000);
-		render_select_number(edit_display_setting_container, ci18n('display_setting:network_update_interval'), 'network_update_interval', true, display_setting.network_update_interval, 1, 600000);
+		form.addEventListener('input', () => {
+			render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
+			render_display_setting_preview(secondaryLayout.previewBody, form, 'live');
+		});
+		form.addEventListener('change', () => {
+			render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
+			render_display_setting_preview(secondaryLayout.previewBody, form, 'live');
+		});
+		updateSecondarySectionMode();
+		update_edit_display_setting(get_display_setting_form_style(form));
+		render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
+		render_display_setting_preview(secondaryLayout.previewBody, form, 'live');
 	}
 
 	function render_drop_down(container, label_text, select_name, displaystyle, values, curval, labels) {
@@ -3593,6 +4870,7 @@ var ctournament = (function() {
 			d_scale: d.scale || '100',
 			fullscreen_ask: d.fullscreen_ask || 'auto',
 			show_announcements: d.show_announcements || 'all', 
+			neversettings: d.neversettings == 'on' ? true : false,
 			button_block_timeout: d.button_block_timeout || '100',
 			negative_timers: d.negative_timers == 'on' ? true : false,
 			shuttle_counter: d.shuttle_counter == 'on' ? true : false,
@@ -3611,10 +4889,10 @@ var ctournament = (function() {
 
 	function update_edit_display_setting(displaystyle)
 	{
-		const names = [ 'show_pause', 'show_court_number', 'show_competition', 'show_round', 'show_middle_name', 'show_doubles_receiving', 
+		const names = [ 'displaymode_style', 'show_pause', 'show_court_number', 'show_competition', 'show_round', 'show_middle_name', 'show_doubles_receiving', 
 						'c0', 'c1', 'cb0', 'cb1', 'cbg', 'cbg2', 'cbg3', 'cbg4', 'cfg', 'cfg2', 'cfg3', 'cfg4', 'cfgdark', 'cexp', 'ct', 
 						'cborder', 'cserv', 'cserv2', 'crecv', 'ctim_blue', 'ctim_active', 'team_colors', 'scale',
-						'show_announcements', 'button_block_timeout', 'negative_timers', 'shuttle_counter', 'editmode_doubleclick', 
+						'show_announcements', 'neversettings', 'button_block_timeout', 'negative_timers', 'shuttle_counter', 'editmode_doubleclick', 
 						'click_mode', 'style', 'language'];
 		
 		names.forEach((field_name) => {
@@ -6004,15 +7282,30 @@ function update_officials() {
 		});
 	}
 
-	function createGeneralDisplaySettingsSelectBox(parentEl, displaysettings_id) {
+	function createGeneralDisplaySettingsSelectBox(parentEl, displaysettings_id, opts = {}) {
+		const fieldName = opts.fieldName || 'displaysettings_general';
 		const displaysettings_select_box = uiu.el(parentEl, 'select', {
-			name: 'displaysettings_general'
+			name: fieldName
 		});
-		createSelectBoxContent(displaysettings_select_box, curt.displaysettings, displaysettings_id);
+		createSelectBoxContent(displaysettings_select_box, curt.displaysettings, displaysettings_id, opts);
 		return displaysettings_select_box;	
 	}
-	function createSelectBoxContent(select_box, content, selected_id) {
+	function createSelectBoxContent(select_box, content, selected_id, opts = {}) {
+		const filterFn = opts.filterFn || (() => true);
+		if (opts.includeEmptyOption) {
+			const empty_attrs = {
+				value: '',
+				label: '-',
+			};
+			if (!selected_id) {
+				empty_attrs.selected = 'selected';
+			}
+			uiu.el(select_box, 'option', empty_attrs, '-');
+		}
 		for (const item of content) {
+			if (!filterFn(item)) {
+				continue;
+			}
 			const attrs = {
 				'data-display-setting-id': selected_id,
 				value: item.id,

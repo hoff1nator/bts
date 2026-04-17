@@ -101,6 +101,8 @@ var ci18n_en = {
 	'announcements:men_doubles': 'Men doubles',
 	'announcements:women_singles': 'Women singles',
 	'announcements:women_doubles': 'Women doubles',
+	'announcements:singles': 'Singles',
+	'announcements:doubles': 'Doubles',
 	'announcements:round_16': 'Round of 16',
 	'announcements:quaterfinal': 'Quarterfinal',
 	'announcements:semifinal': 'Semifinal',
@@ -147,6 +149,7 @@ var ci18n_en = {
 	'display_setting:language_nl-BE': 'Vlaams',
 	'display_setting:fullscreen_ask': 'Request fullscrean on startup: ',
 	'display_setting:show_announcements': 'Show announcements: ',
+	'display_setting:neversettings': 'Disable settings dialog on device',
 	'display_setting:autohide': 'Verberge Einstellungen nach (ms): ',
 	'display_setting:double_click_timeout': 'Doppel-Touch-Sperre (ms): ',
 	'display_setting:button_block_timeout': 'Double press protection(ms): ',
@@ -181,6 +184,7 @@ var ci18n_en = {
 	'tournament:edit:courts': 'Courts:',
 	'tournament:edit:dm_style': 'Default display style:',
 	'tournament:edit:displaysettings_general': 'Default displaysetting:',
+	'tournament:edit:displaysettings_general_tablet': 'Default tablet setting:',
 	'tournament:edit:warmup_timer_behavior': 'Behaviour of the preparation countdown:',
 	'tournament:edit:warmup_timer_behavior:bwf-2016': 'BWF 2016+ (after choice of side)',
 	'tournament:edit:warmup_timer_behavior:legacy': 'legacy (after choice of side)',
@@ -238,6 +242,9 @@ var ci18n_en = {
 	'tournament:edit:advertisements:type': 'Type',
 	'tournament:edit:advertisements:disabled': 'Disabled',
 	'tournament:edit:general_displaysettings': 'Manaage Display Settings:',
+	'tournament:edit:displaysettings:name': 'Name / Description',
+	'tournament:edit:displaysettings:mode': 'Mode',
+	'tournament:edit:displaysettings:actions': 'Actions',
 	'tournament:edit:displays': 'Manage Displays:',
 	'tournament:edit:displays:hostname': 'Hostname',
 	'tournament:edit:displays:batterylevel': 'Battery',
@@ -374,7 +381,7 @@ var ci18n_en = {
 	'tabletoperator:move_up': 'Move up in list',
 	'tabletoperator:move_down': 'Move down in list',
 	'tabletoperator:remove': 'Remove from list',
-	'csvexport:winners': 'CSV export (winner\'s certificates)',
+	'csvexport:winners': 'Certificate export (Word/CSV)',
 };
 
 /*@DEV*/

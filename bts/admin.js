@@ -33,6 +33,51 @@ function _annotate_tournament(tournament) {
 	tournament.system_timezone = tz;
 }
 
+function _get_default_displaysetting_requirements(tournament, displaysetting_id) {
+	const requirements = [];
+	if (displaysetting_id && tournament && displaysetting_id === tournament.displaysettings_general) {
+		requirements.push('display');
+	}
+	if (displaysetting_id && tournament && displaysetting_id === tournament.displaysettings_general_tablet) {
+		requirements.push('umpire');
+	}
+	return requirements;
+}
+
+async function _validate_default_displaysetting_field(app, field, displaysetting_id) {
+	if (field !== 'displaysettings_general' && field !== 'displaysettings_general_tablet') {
+		return null;
+	}
+	if (!displaysetting_id) {
+		return { message: `Field ${field} requires a display setting` };
+	}
+	const expected_devicemode = field === 'displaysettings_general_tablet' ? 'umpire' : 'display';
+	const displaysetting = await app.db.displaysettings.findOne_async({ id: displaysetting_id });
+	if (!displaysetting) {
+		return { message: `Display setting ${displaysetting_id} not found` };
+	}
+	if (displaysetting.devicemode !== expected_devicemode) {
+		return { message: `Display setting ${displaysetting_id} must use devicemode ${expected_devicemode}` };
+	}
+	return null;
+}
+
+function _ensure_tournament_displaysetting_defaults(tournament) {
+	const displaysettings = Array.isArray(tournament.displaysettings) ? tournament.displaysettings : [];
+	const first_display = displaysettings.find((setting) => setting.devicemode === 'display');
+	const first_umpire = displaysettings.find((setting) => setting.devicemode === 'umpire');
+	const selected_display = displaysettings.find((setting) => setting.id === tournament.displaysettings_general);
+	const selected_tablet = displaysettings.find((setting) => setting.id === tournament.displaysettings_general_tablet);
+	const patch = {};
+	if (!selected_display || selected_display.devicemode !== 'display') {
+		patch.displaysettings_general = first_display ? first_display.id : tournament.displaysettings_general;
+	}
+	if (!selected_tablet || selected_tablet.devicemode !== 'umpire') {
+		patch.displaysettings_general_tablet = first_umpire ? first_umpire.id : tournament.displaysettings_general_tablet;
+	}
+	return patch;
+}
+
 
 function handle_tournament_list(app, ws, msg) {
 	app.db.tournaments.find({}, function(err, tournaments) {
@@ -73,7 +118,7 @@ function handle_tournament_edit_props(app, ws, msg) {
 		'upcoming_matches_animation_speed', 'upcoming_matches_max_count','upcoming_matches_animation_pause',
 		'self_check_in_called_overlay_duration_ms',
 		'ticker_enabled', 'ticker_url', 'ticker_password',
-		'language', 'dm_style', 'displaysettings_general',
+		'language', 'dm_style', 'displaysettings_general', 'displaysettings_general_tablet',
 		'tabletoperator_enabled', 'tabletoperator_break_seconds',
 		'announcement_speed','announcement_pause_time_ms',
 		'tabletoperator_set_break_after_tabletservice','tabletoperator_with_state_enabled',
@@ -111,7 +156,10 @@ function handle_tournament_edit_props(app, ws, msg) {
 		'official_rotation_mode',
 		'technical_official_auto_assignment_mode',
 		'technical_official_break_after_assignment_seconds',
-		'logo_background_color', 'logo_foreground_color', 'scoring_formats']);
+		'logo_background_color', 'logo_foreground_color', 'scoring_formats',
+		'certificate_title_line_1', 'certificate_title_line_2',
+		'certificate_export_max_place', 'certificate_export_date',
+		'certificate_export_last_scheduled_date_filter']);
 
 	if (msg.props.btp_timezone) {
 		props.btp_timezone = msg.props.btp_timezone === 'system' ? undefined : msg.props.btp_timezone;
@@ -120,6 +168,15 @@ function handle_tournament_edit_props(app, ws, msg) {
 		if (err || !tournament) {
 			ws.respond(msg, err);
 			return;
+		}
+		for (const field_name of ['displaysettings_general', 'displaysettings_general_tablet']) {
+			if (!Object.prototype.hasOwnProperty.call(props, field_name)) {
+				continue;
+			}
+			const validation_error = await _validate_default_displaysetting_field(app, field_name, props[field_name]);
+			if (validation_error) {
+				return ws.respond(msg, validation_error);
+			}
 		}
 		app.db.tournaments.update({ key }, { $set: props }, { returnUpdatedDocs: true }, function (err, num, t) {
 			if (err) {
@@ -158,9 +215,12 @@ function handle_tournament_edit_props(app, ws, msg) {
 			}
 
 			if (!tournament.displaysettings_general || (tournament.displaysettings_general != t.displaysettings_general)){
-
 				const bupws = require('./bupws');
 				bupws.change_default_display_mode(app, t, tournament.displaysettings_general, t.displaysettings_general);
+			}
+			if (!tournament.displaysettings_general_tablet || (tournament.displaysettings_general_tablet != t.displaysettings_general_tablet)){
+				const bupws = require('./bupws');
+				bupws.change_default_display_mode(app, t, tournament.displaysettings_general_tablet, t.displaysettings_general_tablet);
 			}
 
 			ws.respond(msg, err);
@@ -186,7 +246,7 @@ function handle_tournament_edit_prop(app, ws, msg) {
 		'upcoming_matches_animation_speed', 'upcoming_matches_max_count', 'upcoming_matches_animation_pause',
 		'self_check_in_called_overlay_duration_ms',
 		'ticker_enabled', 'ticker_url', 'ticker_password',
-		'language', 'dm_style', 'displaysettings_general',
+		'language', 'dm_style', 'displaysettings_general', 'displaysettings_general_tablet',
 		'tabletoperator_enabled', 'tabletoperator_break_seconds',
 		'announcement_speed', 'announcement_pause_time_ms',
 		'tabletoperator_set_break_after_tabletservice', 'tabletoperator_with_state_enabled',
@@ -225,6 +285,9 @@ function handle_tournament_edit_prop(app, ws, msg) {
 		'technical_official_auto_assignment_mode',
 		'technical_official_break_after_assignment_seconds',
 		'logo_background_color', 'logo_foreground_color',
+		'certificate_title_line_1', 'certificate_title_line_2',
+		'certificate_export_max_place', 'certificate_export_date',
+		'certificate_export_last_scheduled_date_filter',
 	]);
 
 	const field = msg.field;
@@ -244,6 +307,10 @@ function handle_tournament_edit_prop(app, ws, msg) {
 		if (err || !tournament) {
 			ws.respond(msg, err);
 			return;
+		}
+		const validation_error = await _validate_default_displaysetting_field(app, field, value);
+		if (validation_error) {
+			return ws.respond(msg, validation_error);
 		}
 		app.db.tournaments.update({ key }, { $set: props }, { returnUpdatedDocs: true }, function (err, num, t) {
 			if (err) {
@@ -276,6 +343,10 @@ function handle_tournament_edit_prop(app, ws, msg) {
 			if (!tournament.displaysettings_general || (field === 'displaysettings_general' && tournament.displaysettings_general != t.displaysettings_general)){
 				const bupws = require('./bupws');
 				bupws.change_default_display_mode(app, t, tournament.displaysettings_general, t.displaysettings_general);
+			}
+			if (!tournament.displaysettings_general_tablet || (field === 'displaysettings_general_tablet' && tournament.displaysettings_general_tablet != t.displaysettings_general_tablet)){
+				const bupws = require('./bupws');
+				bupws.change_default_display_mode(app, t, tournament.displaysettings_general_tablet, t.displaysettings_general_tablet);
 			}
 
 			ws.respond(msg, err);
@@ -362,6 +433,85 @@ function handle_tournament_edit_logo(app, ws, msg) {
 
 			ws.respond(msg, err);
 		});
+	});
+}
+
+function handle_certificate_export_mark(app, ws, msg) {
+	if (!msg.tournament_key) {
+		return ws.respond(msg, { message: 'Missing tournament_key' });
+	}
+	const event_names = Array.isArray(msg.event_names) ? msg.event_names : [];
+	const normalized_event_names = event_names
+		.map((event_name) => String(event_name || '').trim())
+		.filter(Boolean);
+
+	app.db.tournaments.findOne({ key: msg.tournament_key }, function(err, tournament) {
+		if (err || !tournament) {
+			return ws.respond(msg, err || { message: 'Tournament not found' });
+		}
+
+		const certificate_exports = {
+			...(tournament.certificate_exports || {}),
+		};
+		const exported_at = new Date().toISOString();
+		normalized_event_names.forEach((event_name) => {
+			certificate_exports[event_name] = exported_at;
+		});
+
+		app.db.tournaments.update(
+			{ key: msg.tournament_key },
+			{ $set: { certificate_exports } },
+			{ returnUpdatedDocs: true },
+			function(updateErr) {
+				if (updateErr) {
+					return ws.respond(msg, updateErr);
+				}
+				notify_change(app, msg.tournament_key, 'prop_changed', {
+					field: 'certificate_exports',
+					value: certificate_exports,
+				});
+				ws.respond(msg, null, { certificate_exports });
+			}
+		);
+	});
+}
+
+function handle_certificate_export_reset(app, ws, msg) {
+	if (!msg.tournament_key) {
+		return ws.respond(msg, { message: 'Missing tournament_key' });
+	}
+	const event_name = typeof msg.event_name === 'string' ? msg.event_name.trim() : '';
+	const reset_all = !!msg.all;
+
+	app.db.tournaments.findOne({ key: msg.tournament_key }, function(err, tournament) {
+		if (err || !tournament) {
+			return ws.respond(msg, err || { message: 'Tournament not found' });
+		}
+
+		let certificate_exports = {
+			...(tournament.certificate_exports || {}),
+		};
+		if (reset_all) {
+			certificate_exports = {};
+		} else if (event_name) {
+			delete certificate_exports[event_name];
+		}
+
+		app.db.tournaments.update(
+			{ key: msg.tournament_key },
+			{ $set: { certificate_exports } },
+			{ returnUpdatedDocs: true },
+			function(updateErr) {
+				if (updateErr) {
+					return ws.respond(msg, updateErr);
+				}
+				notify_change(app, msg.tournament_key, 'prop_changed', {
+					field: 'certificate_exports',
+					value: certificate_exports,
+				});
+				ws.respond(msg, null, { certificate_exports });
+			}
+		);
 	});
 }
 
@@ -516,6 +666,7 @@ function handle_tournament_get(app, ws, msg) {
 			ws.respond(msg, err);
 			return;
 		}
+		tournament.certificate_exports = tournament.certificate_exports || {};
 		async.parallel([
 		function (cb) { 
 			try {
@@ -577,6 +728,8 @@ function handle_tournament_get(app, ws, msg) {
 				cb(err);
 			});
 		}], function(err) {
+			const default_patch = _ensure_tournament_displaysetting_defaults(tournament);
+			Object.assign(tournament, default_patch);
 			if (tournament.scoring_formats && Array.isArray(tournament.scoring_formats.formats)) {
 				const btp_sync = require('./btp_sync');
 				tournament.scoring_formats = {
@@ -587,7 +740,13 @@ function handle_tournament_get(app, ws, msg) {
 			tournament.btp_status = btp_manager.get_status(tournament.key);
 			tournament.ticker_status = ticker_manager.get_status(tournament.key);
 			_annotate_tournament(tournament);
-			ws.respond(msg, err, {tournament});
+			if (Object.keys(default_patch).length === 0) {
+				ws.respond(msg, err, {tournament});
+				return;
+			}
+			app.db.tournaments.update({ key: tournament.key }, { $set: default_patch }, {}, (updateErr) => {
+				ws.respond(msg, err || updateErr, {tournament});
+			});
 		});
 	});
 }
@@ -2903,18 +3062,26 @@ function handle_edit_display_setting(app, ws, msg) {
 	if (!_require_msg(ws, msg, ['tournament_key', 'displaysetting'])) {
 		return;
 	}
-	const bupws = require('./bupws');
-	const querry = {id : msg.displaysetting.id};
 	const displaysetting = msg.displaysetting;
 	const tournament_key = msg.tournament_key;
+	app.db.tournaments.findOne({ key: tournament_key }, async (tournamentErr, tournament) => {
+		if (tournamentErr || !tournament) {
+			return ws.respond(msg, tournamentErr || { message: 'Tournament not found' });
+		}
+		const required_modes = _get_default_displaysetting_requirements(tournament, displaysetting.id);
+		if (required_modes.length > 0 && !required_modes.includes(displaysetting.devicemode)) {
+			return ws.respond(msg, {
+				message: `Default display setting ${displaysetting.id} must stay in mode ${required_modes.join(' or ')}`,
+			});
+		}
 
-	app.db.displaysettings.update(querry, {$set: displaysetting}, {returnUpdatedDocs: true}, (err, numAffected, changed_setting) => {
+		const bupws = require('./bupws');
+		const querry = {id : msg.displaysetting.id};
+		app.db.displaysettings.update(querry, {$set: displaysetting}, {returnUpdatedDocs: true}, () => {});
 
-	});
+		notify_change(app, msg.tournament_key, 'update_display_setting', {setting: displaysetting});
 
-	notify_change(app, msg.tournament_key, 'update_display_setting', {setting: displaysetting});
-
-	app.db.display_court_displaysettings.find({}, function(err, all_displays) {
+		app.db.display_court_displaysettings.find({}, function(err, all_displays) {
 		if (err) {
 			return ws.respond(msg, err);
 		}
@@ -2928,12 +3095,18 @@ function handle_edit_display_setting(app, ws, msg) {
 		});
 
 		ws.respond(msg);	
+		});
 	});
 }
 
 async function async_handle_delete_display_setting(app, ws, msg) {
 	const tournament_key = msg.tournament_key;
 	const setting_id = msg.setting_id;
+	const tournament = await app.db.tournaments.findOne_async({ key: tournament_key });
+	if (tournament && (setting_id === tournament.displaysettings_general || setting_id === tournament.displaysettings_general_tablet)) {
+		ws.respond(msg, {message: `Could not delete default displaysetting ${msg.setting_id}`});
+		return;
+	}
 	const display = await app.db.display_court_displaysettings.findOne_async({displaysetting_id:setting_id});
 	
 	if(display) {
@@ -2946,6 +3119,40 @@ async function async_handle_delete_display_setting(app, ws, msg) {
 	});
 	
 	ws.respond(msg);
+}
+
+function handle_create_display_setting(app, ws, msg) {
+	if (!_require_msg(ws, msg, ['tournament_key', 'displaysetting'])) {
+		return;
+	}
+	const tournament_key = msg.tournament_key;
+	const displaysetting = msg.displaysetting;
+	app.db.tournaments.findOne({ key: tournament_key }, async (tournamentErr, tournament) => {
+		if (tournamentErr || !tournament) {
+			return ws.respond(msg, tournamentErr || { message: 'Tournament not found' });
+		}
+		const required_modes = _get_default_displaysetting_requirements(tournament, displaysetting.id);
+		if (required_modes.length > 0 && !required_modes.includes(displaysetting.devicemode)) {
+			return ws.respond(msg, {
+				message: `Default display setting ${displaysetting.id} must stay in mode ${required_modes.join(' or ')}`,
+			});
+		}
+		app.db.displaysettings.findOne({ id: displaysetting.id }, (findErr, existingSetting) => {
+			if (findErr) {
+				return ws.respond(msg, findErr);
+			}
+			if (existingSetting) {
+				return ws.respond(msg, { message: `Display setting ${displaysetting.id} already exists` });
+			}
+			app.db.displaysettings.insert(displaysetting, (insertErr, insertedSetting) => {
+				if (insertErr) {
+					return ws.respond(msg, insertErr);
+				}
+				notify_change(app, tournament_key, 'update_display_setting', { setting: insertedSetting });
+				ws.respond(msg, null, { setting: insertedSetting });
+			});
+		});
+	});
 }
 
 
@@ -3231,11 +3438,14 @@ async function async_handle_tournament_upload_location_logo(app, ws, msg) {
 
 module.exports = {
 	handle_edit_display_setting,
+	handle_create_display_setting,
 	async_handle_delete_display_setting,
 	async_handle_match_delete,
 	async_handle_tournament_upload_logo,
 	async_handle_tournament_upload_location_logo,
 	handle_begin_to_play_call,
+	handle_certificate_export_mark,
+	handle_certificate_export_reset,
 	handle_announce_match_manually,
 	handle_btp_fetch,
 	handle_confirm_match_finished,

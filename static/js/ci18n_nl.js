@@ -76,6 +76,8 @@ var ci18n_nl = {
 	'announcements:men_doubles': 'Mannen dubbel',
 	'announcements:women_singles': 'Dames enkel',
 	'announcements:women_doubles': 'Dames dubbel',
+	'announcements:singles': 'Enkel',
+	'announcements:doubles': 'Dubbel',
 	'announcements:round_16': 'Ronde van 16',
 	'announcements:quaterfinal': 'Kwartfinale',
 	'announcements:semifinal': 'Halve Finale',
@@ -113,6 +115,7 @@ var ci18n_nl = {
 	'display_setting:language_nl-NL': 'Nederlands',
 	'display_setting:fullscreen_ask': 'Vraag volledig scherm bij opstarten: ',
 	'display_setting:show_announcements': 'Toon aankondigingen: ',
+	'display_setting:neversettings': 'Blokkeer instellingenvenster op apparaat',
 	'display_setting:autohide': 'Verberg Instelling na (ms): ',
 	'display_setting:double_click_timeout': 'Dubbelklik blokkade (ms): ',
 	'display_setting:button_block_timeout': 'Dubbelklik bescherming (ms): ',
@@ -144,6 +147,7 @@ var ci18n_nl = {
 	'tournament:edit:courts': 'Banen:',
 	'tournament:edit:dm_style': 'Standaard schermstijl:',
 	'tournament:edit:displaysettings_general': 'Standaard scherminstelling:',
+	'tournament:edit:displaysettings_general_tablet': 'Standaard tabletinstelling:',
 	'tournament:edit:warmup_timer_behavior': 'Gedrag voorbereidingstimer:',
 	'tournament:edit:warmup_timer_behavior:bwf-2016': 'BWF 2016+ (na keuze speelhelft)',
 	'tournament:edit:warmup_timer_behavior:legacy': 'Oud (na keuze speelhelft)',
@@ -191,6 +195,9 @@ var ci18n_nl = {
 	'tournament:edit:advertisements:type': 'Type',
 	'tournament:edit:advertisements:disabled': 'Uitgeschakeld',
 	'tournament:edit:general_displaysettings': 'Beheer weergave-instellingen:',
+	'tournament:edit:displaysettings:name': 'Naam / Beschrijving',
+	'tournament:edit:displaysettings:mode': 'Modus',
+	'tournament:edit:displaysettings:actions': 'Acties',
 	'tournament:edit:displays': 'Beheer schermen:',
 	'tournament:edit:displays:hostname': 'Hostnaam',
 	'tournament:edit:displays:batterylevel': 'Batterij',
@@ -258,7 +265,7 @@ var ci18n_nl = {
 	'tabletoperator:move_up': 'Omhoog in lijst',
 	'tabletoperator:move_down': 'Omlaag in lijst',
 	'tabletoperator:remove': 'Verwijderen uit lijst',
-	'csvexport:winners': 'CSV-export (winnaarscertificaten)',
+	'csvexport:winners': 'Oorkonde-export (Word/CSV)',
 };
 
 /*@DEV*/
