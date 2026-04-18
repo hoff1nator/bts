@@ -13,6 +13,7 @@ const favicon = require('serve-favicon');
 const admin = require('./admin');
 const btp_manager = require('./btp_manager');
 const bupws = require('./bupws');
+const clock = require('./clock');
 const database = require('./database');
 const http_api = require('./http_api');
 const match_utils = require('./match_utils');
@@ -50,9 +51,10 @@ function main() {
 		},
 		function (config, db, cb) {
 			const app = create_app(config, db);
-			match_utils.start_technical_official_pause_manager(app);
-
-			btp_manager.init(app, (err) => cb(err, app));
+			clock.init(app).then(() => {
+				match_utils.start_technical_official_pause_manager(app);
+				btp_manager.init(app, (err) => cb(err, app));
+			}).catch(cb);
 		}, function(app, cb) {
 			ticker_manager.init(app, cb);
 		},

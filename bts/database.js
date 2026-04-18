@@ -21,7 +21,8 @@ const TABLES = [
 	'displaysettings',
 	'display_court_displaysettings',
 	'normalizations',
-	'advertisements'
+	'advertisements',
+	'app_settings'
 ];
 
 
@@ -68,6 +69,7 @@ function prepare(db, callback) {
 	db.matches.ensureIndex({fieldName: 'tournament_key', unique: false});
 	db.matches.ensureIndex({fieldName: 'event_key', unique: false});
 	db.tournaments.ensureIndex({fieldName: 'key', unique: true});
+	db.app_settings.ensureIndex({fieldName: '_id', unique: true});
 	db.umpires.ensureIndex({fieldName: 'name', unique: true});
 	db.umpires.ensureIndex({fieldName: 'tournament_key', unique: false});
 	db.logs.ensureIndex({ fieldName: 'tournament_key', unique: false });

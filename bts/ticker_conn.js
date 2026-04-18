@@ -11,6 +11,10 @@ const path = require('path');
 
 const RECONNECT_TIMEOUT = 1000;
 
+function now_ms(app) {
+	return app?.clock ? app.clock.now_ms() : Date.now();
+}
+
 function craft_court(c) {
 	return utils.pluck(c, ['num', 'match_id', '_id']);
 }
@@ -180,7 +184,7 @@ class TickerConn {
 			}
 
 			// Hide old matches
-			const now = Date.now();
+			const now = now_ms(this.app);
 			for (const c of db_courts) {
 				const m = matches_by_id.get(c.match_id);
 				if (!m) continue;

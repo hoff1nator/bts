@@ -17,6 +17,14 @@ const FETCH_QUEUE_HANG_TIMEOUT = 30000;
 const BTP_PORT = 9901;
 const BLP_PORT = 9911;
 
+function now_ms(app) {
+	return app?.clock ? app.clock.now_ms() : Date.now();
+}
+
+function real_now_ms(app) {
+	return app?.clock ? app.clock.real_now_ms() : Date.now();
+}
+
 
 function send_raw_request(ip, port, raw_req, callback) {
 	assert(callback);
@@ -150,15 +158,29 @@ class BTPConn {
 						if (response && response != null) {
 							const value = await btp_sync.sync_btp_data(connection.app, connection.tkey, response);
 							const match_utils = require('./match_utils');
+							console.log('[bts] auto_call_trace:post_sync_reevaluation_start', {
+								ts: now_ms(connection.app),
+								tournament_key: connection.tkey,
+								reschedule_fetch: reschedule_fetch === true,
+							});
 							match_utils.queue_auto_execute_preparation_selections(connection.app, connection.tkey, (selectionErr) => {
 								if (selectionErr) {
 									console.warn('[bts] failed to auto select preparation matches after fetch', selectionErr && (selectionErr.stack || selectionErr.message || String(selectionErr)));
 									return;
 								}
+								console.log('[bts] auto_call_trace:post_sync_preparation_done', {
+									ts: now_ms(connection.app),
+									tournament_key: connection.tkey,
+								});
 								match_utils.auto_call_matches_on_free_courts(connection.app, connection.tkey, (callErr) => {
 									if (callErr) {
 										console.warn('[bts] failed to auto call matches on free courts after fetch', callErr && (callErr.stack || callErr.message || String(callErr)));
+										return;
 									}
+									console.log('[bts] auto_call_trace:post_sync_on_court_done', {
+										ts: now_ms(connection.app),
+										tournament_key: connection.tkey,
+									});
 								});
 							});
 							if (reschedule_fetch == true) {
@@ -195,7 +217,7 @@ class BTPConn {
 			this.publish_status();
 			return;
 		}
-		this.next_fetch_ts = Date.now() + this.autofetch_timeout_intervall;
+		this.next_fetch_ts = real_now_ms(this.app) + this.autofetch_timeout_intervall;
 		this.publish_status();
 		this.autofetch_timeout = setTimeout(() => {
 			this.next_fetch_ts = null;
@@ -399,6 +421,7 @@ class BTPConn {
 				court_btp_id,
 				{
 					write_match_check_in_status: tournament?.btp_settings?.check_in_per_match === true,
+					current_now_ms: now_ms(this.app),
 				}
 			);
 			this.send(req, response => {

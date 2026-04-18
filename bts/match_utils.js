@@ -9,6 +9,10 @@ const pending_technical_official_assignment_runs = new Map();
 const pending_technical_official_pause_runs = new Map();
 let technical_official_pause_interval = null;
 
+function now_ms(app) {
+	return app?.clock ? app.clock.now_ms() : Date.now();
+}
+
 function is_tournament_automation_enabled(tournament) {
 	return tournament?.automation_enabled !== false;
 }
@@ -157,7 +161,7 @@ async function call_match(app, tournament, match, old_court, callback) {
 		return callback("Match cannot be called one or more Teams are not set.");
 	}
 	console.log('[bts] auto_call_trace:call_match_start', {
-		ts: Date.now(),
+		ts: now_ms(app),
 		tournament_key: tournament && tournament.key,
 		match_id: match._id,
 		court_id: match.setup && match.setup.court_id,
@@ -165,7 +169,7 @@ async function call_match(app, tournament, match, old_court, callback) {
 		state: match.setup && match.setup.state,
 		now_on_court: match.setup && match.setup.now_on_court,
 	});
-	async.waterfall([	(wcb) => add_called_timestamp(match, wcb),
+	async.waterfall([	(wcb) => add_called_timestamp(app, match, wcb),
 		(wcb) => auto_assign_technical_officials_for_match(app, tournament, match._id, (assignErr) => {
 			if (assignErr) {
 				return wcb(assignErr);
@@ -202,7 +206,7 @@ async function call_match(app, tournament, match, old_court, callback) {
 		(wcb) => auto_execute_preparation_selection_for_setup(app, tournament, match.setup, wcb)],
 		(err) => {
 			console.log('[bts] auto_call_trace:call_match_end', {
-				ts: Date.now(),
+				ts: now_ms(app),
 				tournament_key: tournament && tournament.key,
 				match_id: match && match._id,
 				court_id: match && match.setup && match.setup.court_id,
@@ -248,9 +252,9 @@ function match_completly_initialized(setup) {
 	return true;
 }
 
-function add_called_timestamp(match, callback) {
+function add_called_timestamp(app, match, callback) {
 	const setup = match.setup;
-	const called_timestamp = Date.now();
+	const called_timestamp = now_ms(app);
 	setup.called_timestamp = called_timestamp;
 	setup.state = 'oncourt';
 	remove_preparation_call_timestamp(setup);
@@ -280,16 +284,16 @@ function normalize_preparation_state(setup) {
 	return setup;
 }
 
-function add_preparation_call_timestamp(db, tournament_key, setup, location_id) {
+function add_preparation_call_timestamp(app, tournament_key, setup, location_id) {
 	return new Promise((resolve) => {
 		const stournament = require('./stournament');
 		
-		stournament.get_locations(db, tournament_key, (err, all_locations) => {
+		stournament.get_locations(app.db, tournament_key, (err, all_locations) => {
 			for (const location of all_locations) {
 				if (location._id == location_id) {
 					setup.highlight = location.highlight;
 					setup.location_id = location_id;
-					setup.preparation_call_timestamp = Date.now();
+					setup.preparation_call_timestamp = now_ms(app);
 					setup.state = 'preparation';
 					resolve(setup);
 					return;
@@ -327,8 +331,35 @@ function auto_execute_preparation_selection(app, tournament, location_id, callba
 	}
 
 	const match_automation = require('./match_automation');
-	match_automation.fetch_location_preparation_selection(app, tournament.key, location_id)
+	match_automation.fetch_location_preparation_selection(app, tournament.key, location_id, {
+		now_ts: now_ms(app),
+	})
 		.then((selection) => {
+			const summarize_match = (match) => match ? {
+				_id: match._id,
+				match_num: match?.setup?.match_num,
+				event_name: match?.setup?.event_name,
+				phase_block_key: match?.setup?.phase_block_key,
+				state: match?.setup?.state,
+				scheduled_date: match?.setup?.scheduled_date,
+				scheduled_time_str: match?.setup?.scheduled_time_str,
+			} : null;
+			console.log('[bts] auto_call_trace:auto_execute_preparation_selection', {
+				ts: now_ms(app),
+				tournament_key: tournament.key,
+				location_id,
+				required_preparation_count: selection && selection.required_preparation_count,
+				current_preparation_count: selection && selection.current_preparation_count,
+				missing_preparation_count: selection && selection.missing_preparation_count,
+				effective_required_preparation_count: selection && selection.effective_required_preparation_count,
+				effective_missing_preparation_count: selection && selection.effective_missing_preparation_count,
+				frontier: summarize_match(selection && selection.frontier),
+				display_frontier: summarize_match(selection && selection.display_frontier),
+				display_candidates: (selection && selection.display_candidates || []).map(summarize_match),
+				candidates: (selection && selection.candidates || []).map(summarize_match),
+				selected_matches: (selection && selection.selected_matches || []).map(summarize_match),
+				auto_selected_matches: (selection && selection.auto_selected_matches || []).map(summarize_match),
+			});
 			async.eachSeries(selection.selected_matches || [], (match, cb) => {
 				call_match_in_preparation(app, tournament, match, location_id, cb);
 			}, callback);
@@ -475,7 +506,7 @@ function drop_unsupported_court_officials(app, tournament, match, callback) {
 				releases.push({
 					official_id: official._id,
 					role: 'umpire',
-					wait_ts: Number.isFinite(Number(official.umpire_wait)) ? Number(official.umpire_wait) : (Date.now() / 10),
+					wait_ts: Number.isFinite(Number(official.umpire_wait)) ? Number(official.umpire_wait) : (now_ms(app) / 10),
 				});
 			}
 		}
@@ -486,7 +517,7 @@ function drop_unsupported_court_officials(app, tournament, match, callback) {
 				releases.push({
 					official_id: official._id,
 					role: 'service_judge',
-					wait_ts: Number.isFinite(Number(official.service_judge_wait)) ? Number(official.service_judge_wait) : (Date.now() / 10),
+					wait_ts: Number.isFinite(Number(official.service_judge_wait)) ? Number(official.service_judge_wait) : (now_ms(app) / 10),
 				});
 			}
 		}
@@ -961,7 +992,7 @@ function notify_change_match_called_on_court (app, match, callback) {
 function notify_bupws(app, match, old_court, callback) {
 	const bupws = require('./bupws');
 	console.log('[bts] auto_call_trace:notify_bupws', {
-		ts: Date.now(),
+		ts: now_ms(app),
 		tournament_key: match && match.tournament_key,
 		match_id: match && match._id,
 		court_id: match && match.setup && match.setup.court_id,
@@ -1456,11 +1487,7 @@ function remove_tablet_on_court (app, tkey, cur_match_id, end_ts, callback) {
 				}
 
 				async.each(matches, (match, cb) => {
-				
-					if(match.setup.now_on_court == true) {
-						return cb(null);
-					}
-				
+					
 					if(!cur_match.setup.tabletoperators || cur_match.setup.tabletoperators == 0) {
 						return cb(null);
 					}
@@ -1523,7 +1550,7 @@ function reset_tabletoperator_settings_at_player(app, tkey, tournament, player, 
 	const btp_manager = require('./btp_manager');
 
 	player.now_tablet_on_court = false;
-	const now = Date.now();
+	const now = now_ms(app);
 	if (tournament.tabletoperator_set_break_after_tabletservice && 
 		(now + (parseInt(tournament.tabletoperator_break_seconds) * 1000)) >=  player.last_time_on_court_ts + tournament.btp_settings.pause_duration_ms) {
 		var offset = 0;		
@@ -1758,7 +1785,7 @@ function process_expired_technical_official_breaks_for_tournament(app, tournamen
 		return callback(null);
 	}
 	const pause_ms = get_technical_official_break_after_assignment_ms(tournament);
-	const now = Date.now();
+	const now = now_ms(app);
 	const query = pause_ms > 0
 		? {
 			tournament_key: tournament.key,
@@ -1865,7 +1892,7 @@ function start_technical_official_pause_manager(app) {
 function call_preparation_match_on_court(app, tournament_key, court_id) {
 	return new Promise((resolve, reject) => {
 		console.log('[bts] auto_call_trace:call_preparation_match_on_court_start', {
-			ts: Date.now(),
+			ts: now_ms(app),
 			tournament_key,
 			court_id,
 		});
@@ -1889,10 +1916,12 @@ function call_preparation_match_on_court(app, tournament_key, court_id) {
 						matches,
 						umpires,
 					};
-					const candidates = match_automation.find_call_on_court_candidates(current_tournament, court_id);
+					const candidates = match_automation.find_call_on_court_candidates(current_tournament, court_id, {
+						now_ts: now_ms(app),
+					});
 					if (!candidates || candidates.length === 0) {
 						console.log('[bts] auto_call_trace:call_preparation_match_on_court_no_candidate', {
-							ts: Date.now(),
+							ts: now_ms(app),
 							tournament_key,
 							court_id,
 						});
@@ -1900,7 +1929,7 @@ function call_preparation_match_on_court(app, tournament_key, court_id) {
 					}
 					const next_match = candidates[0];
 					console.log('[bts] auto_call_trace:call_preparation_match_on_court_candidate', {
-						ts: Date.now(),
+						ts: now_ms(app),
 						tournament_key,
 						court_id,
 						match_id: next_match && next_match._id,
@@ -1940,12 +1969,14 @@ function auto_call_matches_on_free_courts(app, tournament_key, callback) {
 				return callback ? callback(err) : null;
 			}
 
-			app.db.matches.find({ tournament_key, 'setup.now_on_court': true }, (matchesErr, on_court_matches) => {
-				if (matchesErr) {
-					return callback ? callback(matchesErr) : null;
-				}
+			Promise.all([
+				app.db.matches.find_async({ tournament_key, 'setup.now_on_court': true }),
+				app.db.matches.find_async({ tournament_key }),
+				app.db.umpires.find_async({ tournament_key }),
+			]).then(([on_court_matches, all_matches, umpires]) => {
 
 				const continue_with_tabletoperators = (tabletoperators) => {
+					const match_automation = require('./match_automation');
 					const occupied_court_ids = new Set(
 						(on_court_matches || [])
 							.filter((match) => match?.setup?.court_id)
@@ -1957,7 +1988,7 @@ function auto_call_matches_on_free_courts(app, tournament_key, callback) {
 						tournament
 					);
 					console.log('[bts] auto_call_trace:auto_call_matches_on_free_courts', {
-						ts: Date.now(),
+						ts: now_ms(app),
 						tournament_key,
 						active_court_ids: (courts || []).filter((court) => court && court.is_active).map((court) => court._id),
 						occupied_court_ids: Array.from(occupied_court_ids),
@@ -1965,6 +1996,21 @@ function auto_call_matches_on_free_courts(app, tournament_key, callback) {
 					});
 
 					async.eachSeries(free_active_courts, (court, cb) => {
+						const candidate_match_nums = match_automation.find_call_on_court_candidates({
+							...(tournament || {}),
+							courts: courts || [],
+							matches: all_matches || [],
+							umpires: umpires || [],
+						}, court._id, {
+							now_ts: now_ms(app),
+						});
+						console.log('[bts] auto_call_trace:auto_call_matches_on_free_courts_candidates', {
+							ts: now_ms(app),
+							tournament_key,
+							court_id: court && court._id,
+							court_num: court && court.num,
+							candidate_match_nums: candidate_match_nums.map((match) => match && match.setup && match.setup.match_num),
+						});
 						call_preparation_match_on_court(app, tournament_key, court._id)
 							.then(() => cb(null))
 							.catch((callErr) => {
@@ -1991,6 +2037,8 @@ function auto_call_matches_on_free_courts(app, tournament_key, callback) {
 					}
 					return continue_with_tabletoperators(tabletoperators || []);
 				});
+			}).catch((queryErr) => {
+				return callback ? callback(queryErr) : null;
 			});
 		});
 	});
@@ -2008,7 +2056,7 @@ async function call_next_possible_match_for_preparation(app, tournament_key, cal
 					return callback(err);
 				}
 				if (matches && matches.length > 0) {
-					const now = new Date();
+					const now = now_ms(app);
 					for (var i = 0; i < matches.length; ++i) {
 						var match = matches[i];
 						var possible = true;
@@ -2033,8 +2081,7 @@ async function call_next_possible_match_for_preparation(app, tournament_key, cal
 										}
 										if (possible) {
 											if (player.last_time_on_court_ts) {
-												const last_time_on_court = new Date(player.last_time_on_court_ts);
-												if ((now - last_time_on_court) < tournament.btp_settings.pause_duration_ms) {
+												if ((now - player.last_time_on_court_ts) < tournament.btp_settings.pause_duration_ms) {
 													possible = false;
 												} else {
 													possible = true;
@@ -2105,7 +2152,7 @@ async function call_match_in_preparation(app, tournament, match, location_id, ca
 			}
 		}
 
-		await add_preparation_call_timestamp(app.db, tournament_key, setup, location_id);
+		await add_preparation_call_timestamp(app, tournament_key, setup, location_id);
 
 		if (is_tournament_automation_enabled(tournament) && tournament.preparation_tabletoperator_setup_enabled) {
 			if (!setup.umpire || (tournament.tabletoperator_with_umpire_enabled && tournament.tabletoperator_with_umpire_enabled == true)) {

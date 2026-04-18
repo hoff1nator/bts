@@ -21,6 +21,7 @@ let preparation_selection_request_inflight = false;
 let preparation_selection_request_pending = false;
 let btp_next_fetch_countdown_interval = null;
 let speech_output_badge_listener_registered = false;
+let test_clock_controls = null;
 const ANNOUNCEMENT_SPEECH_CHECK_STATE_STORAGE_KEY = 'bts_announcement_speech_check_state';
 
 var ctournament = (function() {
@@ -1214,6 +1215,9 @@ var ctournament = (function() {
 			if (labels.length) {
 				update_location_preparation_need_labels(false);
 			}
+			uiu.qsEach('.unassigned_container', (unassigned_container) => {
+				cmatch.render_unassigned(unassigned_container);
+			});
 			if (preparation_selection_request_pending) {
 				preparation_selection_request_pending = false;
 				request_location_preparation_selections();
@@ -1486,6 +1490,74 @@ var ctournament = (function() {
 		return `${year}-${month}-${day}`;
 	}
 
+	function format_datetime_local_input_value(date) {
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, '0');
+		const day = String(date.getDate()).padStart(2, '0');
+		const hour = String(date.getHours()).padStart(2, '0');
+		const minute = String(date.getMinutes()).padStart(2, '0');
+		return `${year}-${month}-${day}T${hour}:${minute}`;
+	}
+
+	function get_effective_test_clock_now_ms() {
+		const clock = curt && curt.test_clock;
+		if (!clock) {
+			return Date.now();
+		}
+		if (clock.mode === 'fixed' && Number.isFinite(Number(clock.fixed_ts))) {
+			return Number(clock.fixed_ts);
+		}
+		if (clock.mode === 'offset' && Number.isFinite(Number(clock.offset_ms))) {
+			return Date.now() + Number(clock.offset_ms);
+		}
+		return Date.now();
+	}
+
+	function update_test_clock_controls() {
+		if (!test_clock_controls) {
+			return;
+		}
+		const clock = curt?.test_clock || { mode: 'real', fixed_ts: null, offset_ms: 0 };
+		const mode = clock.mode || 'real';
+		test_clock_controls.mode_select.value = mode;
+		test_clock_controls.fixed_input.value =
+			(mode === 'fixed' && Number.isFinite(Number(clock.fixed_ts)))
+				? format_datetime_local_input_value(new Date(Number(clock.fixed_ts)))
+				: format_datetime_local_input_value(new Date(get_effective_test_clock_now_ms()));
+		test_clock_controls.offset_input.value = String(Math.round((Number(clock.offset_ms) || 0) / 60000));
+		test_clock_controls.real_section.style.display = mode === 'real' ? '' : 'none';
+		test_clock_controls.fixed_section.style.display = mode === 'fixed' ? '' : 'none';
+		test_clock_controls.offset_section.style.display = mode === 'offset' ? '' : 'none';
+		test_clock_controls.freeze_now_btn.style.display = mode === 'fixed' ? '' : 'none';
+		const effective_now = new Date(get_effective_test_clock_now_ms());
+		let mode_label = 'Echtzeit (Produktivmodus)';
+		if (mode === 'fixed') {
+			mode_label = 'Fixe Zeit (Debug/Test)';
+		} else if (mode === 'offset') {
+			mode_label = 'Offset-Zeit (Debug/Test)';
+		}
+		uiu.text(
+			test_clock_controls.status,
+			`Aktiv: ${mode_label} | BTS-Zeit: ${effective_now.toLocaleString('de-DE')}`
+		);
+	}
+
+	function send_test_clock_update(payload, callback) {
+		send_with_live_status({
+			type: 'clock_set',
+			tournament_key: curt.key,
+			...payload,
+		}, (err, response) => {
+			if (!err && response && response.clock) {
+				curt.test_clock = response.clock;
+				update_test_clock_controls();
+			}
+			if (callback) {
+				callback(err, response);
+			}
+		});
+	}
+
 	function format_certificate_export_timestamp(value) {
 		if (!value) {
 			return '';
@@ -1531,7 +1603,7 @@ var ctournament = (function() {
 
 		const title = ccsvexport.split_tournament_title(curt.name, curt);
 		const event_options = ccsvexport.get_certificate_event_options(curt.matches);
-		const today = new Date();
+		const today = new Date(get_effective_test_clock_now_ms());
 		let certificateSettingsSaveTimer = null;
 		let pendingCertificateSettingsChanges = {};
 
@@ -2512,6 +2584,99 @@ var ctournament = (function() {
 				input.is_nation_competition = uiu.el(is_nation_competition_label, 'input', is_nation_competition_attrs);
 				uiu.el(is_nation_competition_label, 'span', {}, ci18n('nation competition'));
 				bind_live_prop(input.is_nation_competition, 'is_nation_competition');
+
+			const clock_fieldset = uiu.el(tournament_div, 'fieldset');
+			const clock_mode_label = uiu.el(clock_fieldset, 'label');
+			uiu.el(clock_mode_label, 'span', {}, 'Server-Zeitbasis');
+			const clock_mode_select = uiu.el(clock_mode_label, 'select', { name: 'test_clock_mode' });
+			uiu.el(clock_mode_select, 'option', { value: 'real' }, 'Echtzeit (Produktivmodus)');
+			uiu.el(clock_mode_select, 'option', { value: 'fixed' }, 'Fixe Zeit (nur Debug/Test)');
+			uiu.el(clock_mode_select, 'option', { value: 'offset' }, 'Offset-Zeit (nur Debug/Test)');
+
+			const clock_real_section = uiu.el(clock_fieldset, 'div', 'hint');
+			uiu.text(clock_real_section, 'Produktivmodus: BTS verwendet die aktuelle Serverzeit.');
+
+			const clock_fixed_section = uiu.el(clock_fieldset, 'div');
+			const clock_fixed_label = uiu.el(clock_fixed_section, 'label');
+			uiu.el(clock_fixed_label, 'span', {}, 'Fixe Zeit');
+			const clock_fixed_input = uiu.el(clock_fixed_label, 'input', {
+				type: 'datetime-local',
+				name: 'test_clock_fixed',
+			});
+
+			const clock_offset_section = uiu.el(clock_fieldset, 'div');
+			const clock_offset_hint = uiu.el(clock_offset_section, 'div', 'hint');
+			uiu.text(clock_offset_hint, 'Wenn eine Zielzeit gesetzt ist, wird daraus der Offset berechnet. Sonst werden die Minuten verwendet.');
+
+			const clock_offset_label = uiu.el(clock_offset_section, 'label');
+			uiu.el(clock_offset_label, 'span', {}, 'Offset (Minuten)');
+			const clock_offset_input = uiu.el(clock_offset_label, 'input', {
+				type: 'number',
+				name: 'test_clock_offset_minutes',
+				step: '1',
+			});
+
+			const clock_offset_target_label = uiu.el(clock_offset_section, 'label');
+			uiu.el(clock_offset_target_label, 'span', {}, 'Offset-Zielzeit (optional)');
+			const clock_offset_target_input = uiu.el(clock_offset_target_label, 'input', {
+				type: 'datetime-local',
+				name: 'test_clock_offset_target',
+			});
+
+			const clock_actions = uiu.el(clock_fieldset, 'div', 'actions');
+			const apply_clock_btn = uiu.el(clock_actions, 'button', { type: 'button' }, 'Übernehmen');
+			const freeze_now_btn = uiu.el(clock_actions, 'button', { type: 'button' }, 'Jetzt einfrieren');
+			const reset_clock_btn = uiu.el(clock_actions, 'button', { type: 'button' }, 'Echtzeit');
+			const clock_status = uiu.el(clock_fieldset, 'div', 'hint');
+
+			test_clock_controls = {
+				mode_select: clock_mode_select,
+				real_section: clock_real_section,
+				fixed_section: clock_fixed_section,
+				offset_section: clock_offset_section,
+				fixed_input: clock_fixed_input,
+				offset_input: clock_offset_input,
+				offset_target_input: clock_offset_target_input,
+				freeze_now_btn: freeze_now_btn,
+				status: clock_status,
+			};
+			update_test_clock_controls();
+
+			clock_mode_select.addEventListener('change', update_test_clock_controls);
+
+			apply_clock_btn.addEventListener('click', () => {
+				if (clock_mode_select.value === 'fixed') {
+					const fixed_ts = Date.parse(clock_fixed_input.value);
+					if (!Number.isFinite(fixed_ts)) {
+						return cerror.silent('Ungültige fixe Zeit');
+					}
+					return send_test_clock_update({ mode: 'fixed', fixed_ts }, (err) => err && cerror.net(err));
+				}
+				if (clock_mode_select.value === 'offset') {
+					const offset_target_value = (clock_offset_target_input.value || '').trim();
+					if (offset_target_value !== '') {
+						const offset_target_ts = Date.parse(offset_target_value);
+						if (!Number.isFinite(offset_target_ts)) {
+							return cerror.silent('Ungültige Offset-Zielzeit');
+						}
+						return send_test_clock_update({ mode: 'offset', offset_target_ts }, (err) => err && cerror.net(err));
+					}
+					const offset_minutes = Number(clock_offset_input.value || 0);
+					if (!Number.isFinite(offset_minutes)) {
+						return cerror.silent('Ungültiger Offset');
+					}
+					return send_test_clock_update({ mode: 'offset', offset_ms: offset_minutes * 60000 }, (err) => err && cerror.net(err));
+				}
+				return send_test_clock_update({ mode: 'real' }, (err) => err && cerror.net(err));
+			});
+
+			freeze_now_btn.addEventListener('click', () => {
+				send_test_clock_update({ mode: 'fixed', fixed_ts: get_effective_test_clock_now_ms() }, (err) => err && cerror.net(err));
+			});
+
+			reset_clock_btn.addEventListener('click', () => {
+				send_test_clock_update({ mode: 'real' }, (err) => err && cerror.net(err));
+			});
 		}
 
 		// btp-connection-div##################################################################################
@@ -2869,6 +3034,7 @@ var ctournament = (function() {
 			input.upcoming_animation_speed = create_numeric_input(curt, upcoming_fieldset, 'upcoming_matches_animation_speed', 0, 10, 2, 1);
 			input.upcoming_animation_pause = create_numeric_input(curt, upcoming_fieldset, 'upcoming_matches_animation_pause', 1, 20, 4, 1);
 			input.upcoming_matches_max_count = create_numeric_input(curt, upcoming_fieldset, 'upcoming_matches_max_count', 10, 50, 15, 1);
+			input.upcoming_matches_today_only_enabled = create_checkbox(curt, upcoming_fieldset, 'upcoming_matches_today_only_enabled');
 			input.self_check_in_called_overlay_duration_ms = create_duration_seconds_input(curt, upcoming_fieldset, 'self_check_in_called_overlay_duration_ms', 1, 60, 12, 0.5);
 		}
 
@@ -4382,6 +4548,262 @@ var ctournament = (function() {
 		});
 	}
 
+	function create_tablet_preview_demo_state(nowTs) {
+		const intervalTriggerTs = nowTs - 45000;
+		return {
+			metadata: {
+				id: 'tdemo_match_42',
+				updated: nowTs,
+			},
+			setup: {
+				incomplete: false,
+				is_doubles: true,
+				match_num: 42,
+				counting: '3x21',
+				team_competition: false,
+				match_name: 'Finale',
+				event_name: 'MX O55 (Demo)',
+				umpire_name: 'Rita Richter',
+				teams: [
+					{
+						players: [
+							{ name: 'Stefan Frey' },
+							{ name: 'Heidi Bender' },
+						],
+					},
+					{
+						players: [
+							{ name: 'Thomas Bunn' },
+							{ name: 'Heike Bunn' },
+						],
+					},
+				],
+				scheduled_time_str: '14:00',
+				court_id: 'tdemo_5',
+				match_id: 'tdemo_match_42',
+			},
+			presses: [
+				{
+					type: 'pick_side',
+					team1_left: true,
+					timestamp: intervalTriggerTs - 3000,
+				},
+				{
+					type: 'pick_server',
+					team_id: 0,
+					player_id: 0,
+					timestamp: intervalTriggerTs - 2000,
+				},
+				{
+					type: 'pick_receiver',
+					team_id: 1,
+					player_id: 0,
+					timestamp: intervalTriggerTs - 1000,
+				},
+				{
+					type: 'editmode_set-score',
+					score: [11, 8],
+					by_side: false,
+					resumed: true,
+					timestamp: intervalTriggerTs,
+				},
+			],
+		};
+	}
+
+	function build_tablet_preview_bup_settings(previewSettings, previewType) {
+		return Object.assign({}, previewSettings, {
+			court_id: previewType === 'live' ? 'tdemo_5' : 'referee',
+			court_description: '',
+			language: previewSettings.language || 'de',
+			style: previewSettings.style || 'default',
+			neversettings: false,
+		});
+	}
+
+	function set_preview_iframe_field(doc, name, value) {
+		const field = doc.querySelector(`.settings [name="${name}"]`);
+		if (!field) {
+			return;
+		}
+		const normalizedTag = (field.tagName || '').toLowerCase();
+		const normalizedType = (field.type || '').toLowerCase();
+		if (normalizedType === 'checkbox') {
+			field.checked = !!value;
+		} else if (normalizedTag === 'select') {
+			const normalizedValue = value == null ? '' : String(value);
+			const matchingOption = Array.from(field.options || []).find((option) => option.value === normalizedValue);
+			if (matchingOption) {
+				const previousDisabled = matchingOption.disabled;
+				if (previousDisabled) {
+					matchingOption.disabled = false;
+				}
+				matchingOption.selected = true;
+				field.value = normalizedValue;
+				if (previousDisabled) {
+					matchingOption.disabled = true;
+				}
+			} else {
+				field.value = normalizedValue;
+			}
+		} else {
+			field.value = value == null ? '' : String(value);
+		}
+		field.dispatchEvent(new Event('input', { bubbles: true }));
+		field.dispatchEvent(new Event('change', { bubbles: true }));
+		if (normalizedTag === 'select') {
+			field.dispatchEvent(new Event('blur', { bubbles: true }));
+		}
+	}
+
+	function apply_tablet_preview_settings(iframe, previewSettings, previewType) {
+		if (!iframe || !iframe.contentWindow) {
+			return false;
+		}
+		const iframeWindow = iframe.contentWindow;
+		const iframeDocument = iframeWindow.document;
+		if (!iframeDocument || iframeDocument.readyState !== 'complete') {
+			return false;
+		}
+
+		const effectiveSettings = build_tablet_preview_bup_settings(previewSettings, previewType);
+		const nowTs = Date.now();
+		try {
+			iframeWindow.localStorage.setItem('bup_settings', JSON.stringify(effectiveSettings));
+			if (previewType === 'live') {
+				iframeWindow.localStorage.setItem(
+					'bup_match_tdemo_match_42',
+					JSON.stringify(create_tablet_preview_demo_state(nowTs))
+				);
+			}
+		} catch (_err) {
+		}
+
+		[
+			['language', effectiveSettings.language],
+			['fullscreen_ask', effectiveSettings.fullscreen_ask],
+			['style', effectiveSettings.style],
+			['neversettings', effectiveSettings.neversettings],
+			['negative_timers', effectiveSettings.negative_timers],
+			['shuttle_counter', effectiveSettings.shuttle_counter],
+			['editmode_doubleclick', effectiveSettings.editmode_doubleclick],
+			['show_announcements', effectiveSettings.show_announcements],
+			['click_mode', effectiveSettings.click_mode],
+			['button_block_timeout', effectiveSettings.button_block_timeout],
+		].forEach(([name, value]) => set_preview_iframe_field(iframeDocument, name, value));
+
+		const runtimeSettings = {
+			language: effectiveSettings.language,
+			fullscreen_ask: effectiveSettings.fullscreen_ask,
+			style: effectiveSettings.style,
+			neversettings: effectiveSettings.neversettings,
+			negative_timers: effectiveSettings.negative_timers,
+			shuttle_counter: effectiveSettings.shuttle_counter,
+			editmode_doubleclick: effectiveSettings.editmode_doubleclick,
+			show_announcements: effectiveSettings.show_announcements,
+			click_mode: effectiveSettings.click_mode,
+			button_block_timeout: effectiveSettings.button_block_timeout,
+			court_id: effectiveSettings.court_id,
+			court_description: effectiveSettings.court_description,
+		};
+
+		try {
+			if (
+				iframeWindow.state &&
+				iframeWindow.settings &&
+				typeof iframeWindow.settings.change_all === 'function'
+			) {
+				iframeWindow.settings.change_all(iframeWindow.state, runtimeSettings);
+				if (typeof iframeWindow.settings.on_mode_change === 'function') {
+					iframeWindow.settings.on_mode_change(iframeWindow.state);
+				}
+				if (
+					iframeWindow.displaymode &&
+					typeof iframeWindow.displaymode.on_style_change === 'function'
+				) {
+					iframeWindow.displaymode.on_style_change(iframeWindow.state);
+				}
+			}
+		} catch (_err) {
+		}
+
+		return true;
+	}
+
+	function ensure_tablet_preview_iframe(previewBody, previewSettings, previewType) {
+		const existing = previewBody._tabletPreviewState;
+		if (existing && existing.iframe && existing.previewType === previewType) {
+			if (apply_tablet_preview_settings(existing.iframe, previewSettings, previewType)) {
+				return true;
+			}
+			return true;
+		}
+
+		uiu.empty(previewBody);
+		const outer = uiu.el(previewBody, 'div', {
+			class: 'bup_preview_outer',
+			style: 'width:100%;',
+		});
+		const previews = uiu.el(outer, 'div', {
+			class: 'bup_preview_panels',
+			style: 'display:flex;flex-direction:column;gap:1rem;',
+		});
+		const panel = uiu.el(previews, 'div', {
+			class: previewType === 'live' ? 'bup_preview_panel_live' : 'bup_preview_panel_primary',
+		});
+		const frame = uiu.el(panel, 'div', {
+			style: [
+				'position:relative',
+				'width:100%',
+				'padding:0.45rem',
+				'border-radius:16px',
+				'background:#0f0f10',
+				'box-shadow:0 14px 30px rgba(0,0,0,0.18)',
+			].join(';'),
+		});
+		const viewport = uiu.el(frame, 'div', {
+			class: 'bup_preview_viewport',
+			style: [
+				'position:relative',
+				'background:#fff',
+				'border-radius:12px',
+				'overflow:hidden',
+				'width:min(100%, 820px)',
+				'height:510px',
+			].join(';'),
+		});
+		const iframeSrc = previewType === 'live'
+			? `${window.location.origin}/bup/#tdemo&m=tdemo_match_42`
+			: `${window.location.origin}/bup/#tdemo&settings&court=referee&lang=de`;
+		const iframe = uiu.el(viewport, 'iframe', {
+			class: 'bup_preview_frame',
+			src: iframeSrc,
+			title: 'BUP Vorschau',
+			tabindex: '-1',
+		});
+		iframe.style.position = 'relative';
+		iframe.style.width = '200%';
+		iframe.style.height = '200%';
+		iframe.style.border = '0';
+		iframe.style.display = 'block';
+		iframe.style.pointerEvents = 'none';
+		iframe.style.transform = 'scale(0.5)';
+		iframe.style.transformOrigin = 'top left';
+
+		previewBody._tabletPreviewState = {
+			previewType,
+			iframe,
+		};
+
+		iframe.addEventListener('load', () => {
+			window.setTimeout(() => {
+				apply_tablet_preview_settings(iframe, previewSettings, previewType);
+			}, 100);
+		});
+
+		return true;
+	}
+
 	function render_display_setting_preview(previewBody, form, previewType = 'primary') {
 		if (!previewBody) {
 			return;
@@ -4389,89 +4811,7 @@ var ctournament = (function() {
 		const previewSettings = create_displaysettings_object(Object.fromEntries(new FormData(form).entries()));
 
 		if (previewSettings.devicemode === 'umpire') {
-			uiu.empty(previewBody);
-			const previewBupSettings = JSON.stringify(Object.assign({}, previewSettings, {
-				court_id: previewType === 'live' ? 'tdemo_5' : 'referee',
-				court_description: '',
-				language: previewSettings.language || 'de',
-				style: previewSettings.style || 'default',
-				neversettings: false,
-			}));
-			let previousBupSettings = null;
-			try {
-				previousBupSettings = window.localStorage.getItem('bup_settings');
-				window.localStorage.setItem('bup_settings', previewBupSettings);
-			} catch (_err) {
-				previousBupSettings = null;
-			}
-			const outer = uiu.el(previewBody, 'div', {
-				class: 'bup_preview_outer',
-				style: 'width:100%;',
-			});
-			const previews = uiu.el(outer, 'div', {
-				class: 'bup_preview_panels',
-				style: 'display:flex;flex-direction:column;gap:1rem;',
-			});
-			const panel = uiu.el(previews, 'div', {
-				class: previewType === 'live' ? 'bup_preview_panel_live' : 'bup_preview_panel_primary',
-			});
-			const frame = uiu.el(panel, 'div', {
-				style: [
-					'position:relative',
-					'width:100%',
-					'padding:0.45rem',
-					'border-radius:16px',
-					'background:#0f0f10',
-					'box-shadow:0 14px 30px rgba(0,0,0,0.18)',
-				].join(';'),
-			});
-			const viewport = uiu.el(frame, 'div', {
-				class: 'bup_preview_viewport',
-				style: [
-					'position:relative',
-					'background:#fff',
-					'border-radius:12px',
-					'overflow:hidden',
-					'width:min(100%, 820px)',
-					'height:510px',
-				].join(';'),
-			});
-			const iframeSrc = previewType === 'live'
-				? `${window.location.origin}/bup/#tdemo&m=tdemo_match_42`
-				: `${window.location.origin}/bup/#tdemo&settings&court=referee&lang=de`;
-			const iframe = uiu.el(viewport, 'iframe', {
-				class: 'bup_preview_frame',
-				src: iframeSrc,
-				title: 'BUP Vorschau',
-				tabindex: '-1',
-			});
-			iframe.style.position = 'relative';
-			iframe.style.width = '200%';
-			iframe.style.height = '200%';
-			iframe.style.border = '0';
-			iframe.style.display = 'block';
-			iframe.style.pointerEvents = 'none';
-			iframe.style.transform = 'scale(0.5)';
-			iframe.style.transformOrigin = 'top left';
-			const updateDebug = (prefix) => {
-				try {
-				} catch (err) {
-				}
-			};
-			iframe.addEventListener('load', () => {
-				updateDebug('iframe: load');
-				window.setTimeout(() => updateDebug('iframe: load + 500ms'), 500);
-				window.setTimeout(() => {
-					try {
-						if (previousBupSettings === null) {
-							window.localStorage.removeItem('bup_settings');
-						} else {
-							window.localStorage.setItem('bup_settings', previousBupSettings);
-						}
-					} catch (_err) {
-					}
-				}, 1500);
-			});
+			ensure_tablet_preview_iframe(previewBody, previewSettings, previewType);
 			return;
 		}
 
@@ -4517,6 +4857,8 @@ var ctournament = (function() {
 
 	function render_edit_display_setting(form, display_setting) {
 		const edit_display_setting_container = uiu.el(form, 'div', 'edit_display_setting_container');
+		let previewRenderTimer = null;
+		let lastPreviewRenderSignature = null;
 		const createSettingsSection = (title, className = '') => {
 			const section = uiu.el(edit_display_setting_container, 'section', {
 				class: `display_setting_section ${className}`.trim(),
@@ -4663,12 +5005,30 @@ var ctournament = (function() {
 			});
 		}
 		const displaystyle_select = render_drop_down(primaryLayout.settingsColumn, ci18n('display_setting:style'), 'displaymode_style', (display_setting.devicemode === 'umpire' ? 'umpire' : true), displaymode.ALL_STYLES, display_setting.displaymode_style || '');
+		const collectPreviewRenderSignature = () => JSON.stringify(Object.fromEntries(new FormData(form).entries()));
+		const renderAllDisplaySettingPreviews = (force = false) => {
+			const signature = collectPreviewRenderSignature();
+			if (!force && signature === lastPreviewRenderSignature) {
+				return;
+			}
+			lastPreviewRenderSignature = signature;
+			render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
+			render_display_setting_preview(secondaryLayout.previewBody, form, 'live');
+		};
+		const scheduleDisplaySettingPreviewRender = (delay = 120, force = false) => {
+			if (previewRenderTimer) {
+				window.clearTimeout(previewRenderTimer);
+			}
+			previewRenderTimer = window.setTimeout(() => {
+				previewRenderTimer = null;
+				renderAllDisplaySettingPreviews(force);
+			}, delay);
+		};
 		
 		displaystyle_select.addEventListener('change', (e) => {
 			const style = e.target;
 			update_edit_display_setting(style.value);
-			render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
-			render_display_setting_preview(secondaryLayout.previewBody, form, 'live');
+			scheduleDisplaySettingPreviewRender(80, true);
 		});
 		const updateSecondarySectionMode = () => {
 			const isTablet = getCurrentDeviceMode() === 'umpire';
@@ -4685,8 +5045,7 @@ var ctournament = (function() {
 		devicemode_select.addEventListener('change', () => {
 			update_edit_display_setting(get_display_setting_form_style(form));
 			updateSecondarySectionMode();
-			render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
-			render_display_setting_preview(secondaryLayout.previewBody, form, 'live');
+			scheduleDisplaySettingPreviewRender(80, true);
 		});
 		
 		render_select_number(primaryLayout.settingsColumn, ci18n('display_setting:scale'), 'scale', calculated_style, display_setting.d_scale, 20, 500);
@@ -4748,17 +5107,14 @@ var ctournament = (function() {
 		render_select_number(technicalSection, ci18n('display_setting:network_update_interval'), 'network_update_interval', true, display_setting.network_update_interval, 1, 600000);
 
 		form.addEventListener('input', () => {
-			render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
-			render_display_setting_preview(secondaryLayout.previewBody, form, 'live');
+			scheduleDisplaySettingPreviewRender(180, false);
 		});
 		form.addEventListener('change', () => {
-			render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
-			render_display_setting_preview(secondaryLayout.previewBody, form, 'live');
+			scheduleDisplaySettingPreviewRender(80, false);
 		});
 		updateSecondarySectionMode();
 		update_edit_display_setting(get_display_setting_form_style(form));
-		render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
-		render_display_setting_preview(secondaryLayout.previewBody, form, 'live');
+		renderAllDisplaySettingPreviews(true);
 	}
 
 	function render_drop_down(container, label_text, select_name, displaystyle, values, curval, labels) {
@@ -8379,6 +8735,8 @@ function update_officials() {
 			update_btp_settings_ui,
 			update_show_tabletoperators,
 			update_show_automation_controls,
+			request_location_preparation_selections,
+			update_test_clock_controls,
 			close_scoring_format_dialog_if_open,
 			refresh_current_view,
 			handle_view_announcement,

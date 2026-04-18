@@ -72,6 +72,22 @@ function default_handler(rerender, special_funcs) {
 	}
 
 	function _after_tournament_field_change(field, value, change_obj) {
+		const preparation_selection_live_fields = new Set([
+			'call_preparation_matches_automatically_enabled',
+			'preparation_successor_rally_count',
+			'preparation_call_player_pause_expired_enabled',
+			'preparation_call_technical_officials_available_enabled',
+			'preparation_call_time_limit_before_scheduled_enabled',
+			'preparation_call_time_limit_before_scheduled_minutes',
+			'preparation_call_block_ahead_limit_enabled',
+			'preparation_call_block_ahead_limit',
+			'preparation_call_time_ahead_of_frontier_enabled',
+			'preparation_call_time_ahead_of_frontier_minutes',
+			'preparation_call_matches_ahead_of_frontier_enabled',
+			'preparation_call_matches_ahead_of_frontier_limit',
+			'upcoming_matches_today_only_enabled',
+		]);
+
 		if (current_view === 'edit') {
 			ctournament.update_edit_dependencies();
 		}
@@ -85,6 +101,9 @@ function default_handler(rerender, special_funcs) {
 			ctournament.refresh_current_view();
 		}
 		if (field === 'tabletoperator_enabled') {
+			ctournament.refresh_current_view();
+		}
+		if (field === 'upcoming_matches_today_only_enabled') {
 			ctournament.refresh_current_view();
 		}
 		if (field === 'official_rotation_mode' && current_view === 'edit') {
@@ -103,6 +122,11 @@ function default_handler(rerender, special_funcs) {
 			'tabletoperator_enabled',
 		].includes(field) && current_view === 'show') {
 			ctournament.update_show_automation_controls();
+		}
+		if (preparation_selection_live_fields.has(field)
+			&& ctournament
+			&& typeof ctournament.request_location_preparation_selections === 'function') {
+			ctournament.request_location_preparation_selections();
 		}
 	}
 
@@ -210,6 +234,12 @@ function default_handler(rerender, special_funcs) {
 				_after_tournament_field_change(field, c.val.value, c);
 				break;
 			}
+			case 'clock_changed':
+				curt.test_clock = c.val.clock;
+				if (ctournament && typeof ctournament.update_test_clock_controls === 'function') {
+					ctournament.update_test_clock_controls();
+				}
+				break;
 			case 'logo_changed':
 			if(c.val.logo_background_color != undefined) {
 				curt.logo_background_color = c.val.logo_background_color;

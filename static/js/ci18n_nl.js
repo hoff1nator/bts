@@ -216,6 +216,7 @@ var ci18n_nl = {
 	'tournament:edit:upcoming_matches_animation_speed': 'Animatiesnelheid scrollen in wedstrijdoverzicht',
 	'tournament:edit:upcoming_matches_animation_pause': 'Pauze begin/einde pagina (sec)',
 	'tournament:edit:upcoming_matches_max_count': 'Max. aantal wedstrijden in overzicht',
+	'tournament:edit:upcoming_matches_today_only_enabled': 'Toon alleen wedstrijden die vandaag gepland zijn (op basis van BTS-tijd)',
 	'tournament:edit:call_preparation_matches_automatically_enabled': 'Roep voorbereidende wedstrijden automatisch op vrije banen',
 	'tournament:edit:call_next_possible_scheduled_match_in_preparation': 'Roep volgende mogelijke wedstrijd automatisch in voorbereiding op',
 	'to_stats:header': 'Statistieken officials',

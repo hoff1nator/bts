@@ -25,6 +25,58 @@ var match_scoring = (function() {
 		};
 	}
 
+	function normalize_set_points_full(setPoints, fallbackSetPoints) {
+		const normalized = normalize_set_points(setPoints, fallbackSetPoints);
+		return {
+			...(fallbackSetPoints || {}),
+			...(setPoints || {}),
+			end_points: normalized.end_points,
+			max_points: normalized.max_points,
+		};
+	}
+
+	function normalize_scoring_format_for_calc(scoringFormat) {
+		const format = scoringFormat || {};
+		const fallback = fallback_scoring_format();
+		return {
+			...format,
+			numSets: Number.isFinite(format.numSets) && format.numSets > 0 ? format.numSets : fallback.numSets,
+			set_points: normalize_set_points_full(format.set_points, fallback.set_points),
+			last_set_points: normalize_set_points_full(format.last_set_points, fallback.last_set_points),
+		};
+	}
+
+	function get_default_tournament_scoring_format(tournament) {
+		const scoringFormats = tournament && tournament.scoring_formats;
+		const formats = Array.isArray(scoringFormats && scoringFormats.formats) ? scoringFormats.formats : [];
+		if (formats.length === 0) {
+			return null;
+		}
+
+		const defaultId = Number(scoringFormats && scoringFormats.default_id);
+		if (Number.isFinite(defaultId)) {
+			const found = formats.find((format) => Number(format && format.id) === defaultId);
+			if (found) {
+				return found;
+			}
+		}
+
+		return formats[0];
+	}
+
+	function normalize_setup_for_calc(setup, tournament) {
+		const normalizedSetup = setup ? { ...setup } : {};
+		const setupScoringFormat = normalizedSetup.scoring_format;
+		const defaultScoringFormat = get_default_tournament_scoring_format(tournament);
+		const scoringFormat = normalize_scoring_format_for_calc(setupScoringFormat || defaultScoringFormat);
+
+		if (!normalizedSetup.counting && scoringFormat && scoringFormat.name) {
+			normalizedSetup.counting = scoringFormat.name;
+		}
+		normalizedSetup.scoring_format = scoringFormat;
+		return normalizedSetup;
+	}
+
 	function is_set_over(scoreA, scoreB, setPoints) {
 		const maxScore = setPoints?.max_points;
 		const winningScore = setPoints?.end_points;
@@ -80,6 +132,7 @@ var match_scoring = (function() {
 	}
 
 	return {
+		normalize_setup_for_calc,
 		is_match_over,
 		is_set_over,
 	};

@@ -27,6 +27,42 @@ function calc_section(m) {
 	return 'unassigned';
 }
 
+function get_effective_test_clock_now_ms() {
+	const clock = curt && curt.test_clock;
+	if (!clock) {
+		return Date.now();
+	}
+	if (clock.mode === 'fixed' && Number.isFinite(Number(clock.fixed_ts))) {
+		return Number(clock.fixed_ts);
+	}
+	if (clock.mode === 'offset' && Number.isFinite(Number(clock.offset_ms))) {
+		return Date.now() + Number(clock.offset_ms);
+	}
+	if (Number.isFinite(Number(clock.effective_now_ms))) {
+		return Number(clock.effective_now_ms);
+	}
+	return Date.now();
+}
+
+function get_bts_today_scheduled_date() {
+	const time_zone = (curt && curt.system_timezone) || 'Europe/Berlin';
+	return new Intl.DateTimeFormat('sv-SE', {
+		timeZone: time_zone,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+	}).format(new Date(get_effective_test_clock_now_ms()));
+}
+
+function is_match_scheduled_for_bts_today(match) {
+	return !!(match && match.setup && match.setup.scheduled_date)
+		&& match.setup.scheduled_date === get_bts_today_scheduled_date();
+}
+
+function should_limit_upcoming_matches_to_bts_today() {
+	return !!(curt && curt.upcoming_matches_today_only_enabled);
+}
+
 function resolve_match_court(match, court) {
 	if (court) {
 		return court;
@@ -1107,18 +1143,18 @@ function update_player(match_id, player, now_on_court, show_player_status) {
 				});
 				break;
 			default:
+				const old_court_id = old_section.slice(6, old_section.length);
+				const old_court = utils.find(curt.courts, c => c._id === old_court_id);
 				const main_container = document.getElementsByClassName('main_upcoming');
 				if (main_container.length > 0){
-					uiu.qsEach('.court_row[data-court_id=' + JSON.stringify(m.setup.court_id) + ']', (match_row_el) => {
-						const c = utils.find(curt.courts, c => c._id === m.setup.court_id);
+					uiu.qsEach('.court_row[data-court_id=' + JSON.stringify(old_court_id) + ']', (match_row_el) => {
 						match_row_el.innerHTML = "";
-						render_empty_court_row(match_row_el, c, 'public', false);
+						render_empty_court_row(match_row_el, old_court, 'public', false);
 					});
 				} else {
-					uiu.qsEach('.court_row[data-court_id=' + JSON.stringify(old_section.slice(6, old_section.length)) + ']', (match_row_el) => {
-						const c = utils.find(curt.courts, c => c._id === m.setup.court_id);
+					uiu.qsEach('.court_row[data-court_id=' + JSON.stringify(old_court_id) + ']', (match_row_el) => {
 						match_row_el.innerHTML = "";
-						render_empty_court_row(match_row_el, c, 'plain', true);
+						render_empty_court_row(match_row_el, old_court, 'plain', true);
 					});
 				}
 				break;
@@ -1181,7 +1217,7 @@ function insert_new_match_row(m, section) {
 }
 
 function update_match_row(m, new_section) {
-	uiu.qsEach('.match[data-match_id=' + JSON.stringify(m._id) + ']', (match_row_el) => {
+	uiu.qsEach('[data-match_id=' + JSON.stringify(m._id) + ']', (match_row_el) => {
 		match_row_el.innerHTML = '';
 		
 		switch (new_section) {
@@ -1222,7 +1258,7 @@ function create_timer(timer_state, parent, default_color, exigent_color) {
 		return;
 	}
 
-	var tv = timer.calc(timer_state);
+	var tv = timer.calc(timer_state, get_effective_test_clock_now_ms());
 		
 	if(!tv || !tv.visible){
 		return;
@@ -1235,7 +1271,7 @@ function create_timer(timer_state, parent, default_color, exigent_color) {
 	var tobj = {}
 
 	var update = function() {
-		var tv = timer.calc(timer_state);
+		var tv = timer.calc(timer_state, get_effective_test_clock_now_ms());
 		var visible = tv.visible;
 
 		uiu.text (el, tv.str);
@@ -1667,7 +1703,7 @@ function _update_setup(setup, d) {
 		result.state = 'preparation';
 		result.location_id = d.preparation_location_id;
 		if (!result.preparation_call_timestamp) {
-			result.preparation_call_timestamp = Date.now();
+			result.preparation_call_timestamp = get_effective_test_clock_now_ms();
 		}
 	} else if (result.state === 'preparation') {
 		result.state = 'scheduled';
@@ -1857,6 +1893,7 @@ function ui_edit(match_id) {
 			match,
 			old_court,
 			tournament_key: curt.key,
+			tabletoperator_assignment_id: d.tabletoperator_assignment_id || null,
 			btp_update: (curt.btp_enabled && (!! d.btp_update || force_btp_update)),
 		}, function match_edit_callback(err) {
 			btn.removeAttribute('disabled');
@@ -2001,12 +2038,58 @@ function render_match_table(container, matches, style, show_player_status, show_
 
 }
 
+function get_preparation_callable_match_ids() {
+	const result = new Set();
+	const selections_by_location_id = (curt && curt.location_preparation_selection_by_location_id) || {};
+	for (const selection of Object.values(selections_by_location_id)) {
+		const display_match_ids = (selection && selection.display_candidate_match_ids) || selection?.candidate_match_ids || [];
+		for (const match_id of display_match_ids) {
+			if (match_id != null) {
+				result.add(String(match_id));
+			}
+		}
+	}
+	return result;
+}
+
 function render_unassigned(container) {
 	uiu.empty(container);
 	uiu.el(container, 'h3', 'section', ci18n('Unassigned Matches'));
 
-	const unassigned_matches = curt.matches.filter(m => calc_section(m) === 'unassigned');
-	render_match_table(container, unassigned_matches, 'unasigned', true, curt.tabletoperator_enabled);
+	const unassigned_matches = curt.matches.filter((m) => {
+		if (calc_section(m) !== 'unassigned') {
+			return false;
+		}
+		if (should_limit_upcoming_matches_to_bts_today() && !is_match_scheduled_for_bts_today(m)) {
+			return false;
+		}
+		return true;
+	});
+	const callable_match_ids = get_preparation_callable_match_ids();
+	const last_callable_index = unassigned_matches.reduce((last_index, match, index) => {
+		return callable_match_ids.has(String(match._id)) ? index : last_index;
+	}, -1);
+
+	const table = uiu.el(container, 'table', 'match_table');
+	render_match_table_header(table, true);
+	const tbody = uiu.el(table, 'tbody');
+
+	unassigned_matches.forEach((match, index) => {
+		if (!match.setup.is_match) {
+			return;
+		}
+		const is_callable_for_preparation = callable_match_ids.has(String(match._id));
+		const tr = uiu.el(tbody, 'tr', {
+			'class': 'match highlight_' + match.setup.highlight
+				+ (is_callable_for_preparation ? ' preparation_callable' : '')
+				+ (index === last_callable_index ? ' preparation_call_cutoff' : ''),
+			'data-match_id': match._id,
+		});
+		if (is_callable_for_preparation) {
+			tr.setAttribute('data-preparation-callable', 'true');
+		}
+		render_match_row(tr, match, null, 'unasigned', true, curt.tabletoperator_enabled);
+	});
 }
 
 function render_upcoming_matches(container) {
@@ -2029,6 +2112,7 @@ function render_upcoming_matches(container) {
 
 	const unassigned_matches = curt.matches.filter(m => {
 		if (calc_section(m) !== 'unassigned') return false;
+		if (should_limit_upcoming_matches_to_bts_today() && !is_match_scheduled_for_bts_today(m)) return false;
 		if (!param_location) return true;
 
 		const loc = locationById[m.setup.location_id];
@@ -2777,6 +2861,59 @@ function render_edit(form, match) {
 		rerender_official_selects();
 	});
 	rerender_official_selects();
+
+	if (curt && curt.tabletoperator_enabled) {
+		const tabletoperator_container = uiu.el(edit_match_container, 'div', {
+			style: 'margin-top: 0.5em',
+		});
+		uiu.el(tabletoperator_container, 'span', 'match_label', ci18n('match:edit:tabletoperator_assignment'));
+		const tabletoperator_select = uiu.el(tabletoperator_container, 'select', {
+			name: 'tabletoperator_assignment_id',
+			size: 1,
+		});
+		uiu.el(tabletoperator_select, 'option', {
+			value: '',
+			selected: 'selected',
+		}, ci18n('match:edit:tabletoperator_assignment_no_change'));
+
+		const unassigned_tabletoperators = (curt.tabletoperators || [])
+			.filter((entry) => entry && entry.court == null)
+			.sort((a, b) => (a.start_ts || 0) - (b.start_ts || 0));
+		unassigned_tabletoperators.forEach((entry, index) => {
+			const names = (entry.tabletoperator || []).map((participant) => participant.name).filter(Boolean).join(' / ');
+			if (!names) {
+				return;
+			}
+			const label = setup.tabletoperators && setup.tabletoperators.length > 0
+				? ci18n('match:edit:tabletoperator_assignment_swap_option', {
+					position: String(index + 1),
+					name: names,
+				})
+				: ci18n('match:edit:tabletoperator_assignment_assign_option', {
+					position: String(index + 1),
+					name: names,
+				});
+			uiu.el(tabletoperator_select, 'option', {
+				value: entry._id,
+			}, label);
+		});
+
+		const current_assignment = Array.isArray(setup.tabletoperators)
+			? setup.tabletoperators.map((participant) => participant.name).filter(Boolean).join(' / ')
+			: '';
+		if (current_assignment) {
+			uiu.el(tabletoperator_container, 'span', {
+				class: 'match_label',
+				style: 'margin-left: 1em;',
+			}, ci18n('match:edit:tabletoperator_assignment_current'));
+			uiu.el(tabletoperator_container, 'input', {
+				type: 'text',
+				value: current_assignment,
+				disabled: 'disabled',
+				style: 'width: 268px;',
+			});
+		}
+	}
 
 	render_override_colors(edit_match_container, setup);
 }

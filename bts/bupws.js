@@ -19,6 +19,28 @@ const all_panels = [];
 const default_tournament_key = 'default';
 const default_displaysettings_key = default_tournament_key;
 
+function now_ms(app) {
+	return app?.clock ? app.clock.now_ms() : Date.now();
+}
+
+function real_now_ms(app) {
+	return app?.clock?.real_now_ms ? app.clock.real_now_ms() : Date.now();
+}
+
+function bup_outgoing_ts(app, ts) {
+	if (ts == null) {
+		return ts;
+	}
+	return app?.clock?.to_real_ts ? app.clock.to_real_ts(ts) : ts;
+}
+
+function bup_incoming_ts(app, ts) {
+	if (ts == null) {
+		return ts;
+	}
+	return app?.clock?.to_effective_ts ? app.clock.to_effective_ts(ts) : ts;
+}
+
 function normalize_panel_devicemode(devicemode) {
 	return devicemode === 'umpire' ? 'umpire' : 'display';
 }
@@ -175,12 +197,12 @@ async function handle_persist_display_settings(app, ws, msg) {
 	const hostname = await determine_client_hostname(ws);
 	var client_court_displaysetting = await get_display_court_displaysettings(app, client_id);
 	if (client_court_displaysetting == null) {
-		setting.id = tournament_key + "_" + court_id + " _" + Date.now();
+		setting.id = tournament_key + "_" + court_id + " _" + real_now_ms(app);
 		setting = await persist_displaysetting(app, tournament_key, setting);
 		client_court_displaysetting = create_display_court_displaysettings(client_id, hostname, court_id, setting.id);
 		client_court_displaysetting = await persist_client_court_displaysetting(app, client_court_displaysetting);
 	} else {
-		setting.id = tournament_key + "_" + court_id + " _" + Date.now();
+		setting.id = tournament_key + "_" + court_id + " _" + real_now_ms(app);
 		setting = await persist_displaysetting(app, tournament_key, setting);
 		const updatevalues = {
 			court_id: court_id,
@@ -275,7 +297,7 @@ async function handle_score_update(app, ws, msg) {
 				network_teams_player1_even:score_data.network_teams_player1_even,
 				presses:score_data.presses,
 				duration_ms:score_data.duration_ms,
-				end_ts:score_data.end_ts,
+				end_ts:bup_incoming_ts(app, score_data.end_ts),
 				'setup.now_on_court': true,
 				'setup.state': 'oncourt',
 			};
@@ -308,7 +330,9 @@ async function handle_score_update(app, ws, msg) {
 					state: update['setup.state'],
 				},
 			};
-			const preparation_successor_state = match_automation.calculate_preparation_successor_state(simulated_match, tournament);
+			const preparation_successor_state = match_automation.calculate_preparation_successor_state(simulated_match, tournament, {
+				now_ts: now_ms(app),
+			});
 			update['setup.needs_preparation_successor'] = preparation_successor_state.needs_preparation_successor;
 			update['setup.needs_preparation_successor_ts'] = preparation_successor_state.needs_preparation_successor_ts;
 
@@ -816,7 +840,7 @@ function handle_command_done(app, ws, msg) {
 
 function handle_score_change(app, tournament_key, court_id) {
 	console.log('[bts] auto_call_trace:bup_handle_score_change', {
-		ts: Date.now(),
+		ts: now_ms(app),
 		tournament_key,
 		court_id: court_id || null,
 		all_matches_delivery: !!all_matches_delivery(),
@@ -885,7 +909,7 @@ function cmp_bup_matches(a, b, prefer_finished_first) {
 }
 
 function matches_handler(app, ws, tournament_key, court_id) {
-	const now = Date.now();
+	const now = now_ms(app);
 	const show_still = now - 60000;
 	const query = {
 		tournament_key,
@@ -937,7 +961,7 @@ function matches_handler(app, ws, tournament_key, court_id) {
 		}
 
 		if(db_matches){
-		    let matches = db_matches.map(dbm => create_match_representation(tournament, dbm));
+		    let matches = db_matches.map(dbm => create_match_representation(app, tournament, dbm));
 			if (!court_id) {
 		        matches = matches.filter(m => m.setup.now_on_court);
 		    }
@@ -954,7 +978,7 @@ function matches_handler(app, ws, tournament_key, court_id) {
 					res.match_id = 'bts_' + dc.match_id;
 				}
 				if (dc.called_timestamp) {
-					res.called_timestamp = dc.called_timestamp;
+					res.called_timestamp = bup_outgoing_ts(app, dc.called_timestamp);
 				}
 				return res;
 			});
@@ -964,7 +988,7 @@ function matches_handler(app, ws, tournament_key, court_id) {
 			event.matches = matches;
 			event.courts = courts;
 			console.log('[bts] auto_call_trace:bup_score_update_payload', {
-				ts: Date.now(),
+				ts: now_ms(app),
 				tournament_key,
 				court_id: court_id || null,
 				match_states: matches.map((match) => ({
@@ -984,8 +1008,10 @@ function matches_handler(app, ws, tournament_key, court_id) {
 	});
 }
 
-function create_match_representation(tournament, match) {
-	const setup = match.setup;
+function create_match_representation(app, tournament, match) {
+	const setup = {
+		...match.setup,
+	};
 	setup.match_id = 'bts_' + match._id;
 	setup.team_competition = tournament.is_team;
 	setup.nation_competition = tournament.is_nation_competition;
@@ -1016,13 +1042,17 @@ function create_match_representation(tournament, match) {
 		}
 	}
 
+	setup.called_timestamp = bup_outgoing_ts(app, setup.called_timestamp);
+	setup.preparation_call_timestamp = bup_outgoing_ts(app, setup.preparation_call_timestamp);
+	setup.needs_preparation_successor_ts = bup_outgoing_ts(app, setup.needs_preparation_successor_ts);
+
 	const res = {
 		setup,
 		network_score: match.network_score,
 		network_team1_left: match.network_team1_left,
 		network_team1_serving: match.network_team1_serving,
 		network_teams_player1_even: match.network_teams_player1_even,
-		end_ts: match.end_ts !== undefined ? match.end_ts : null,
+		end_ts: match.end_ts !== undefined ? bup_outgoing_ts(app, match.end_ts) : null,
 	};
 	if (match.presses) {
 		res.presses_json = JSON.stringify(match.presses);

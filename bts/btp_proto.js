@@ -4,6 +4,11 @@ const zlib = require('zlib');
 const xmldom = require('xmldom');
 const serror = require('./serror');
 
+function resolve_current_now_ms(options = {}) {
+	const normalized = Number(options.current_now_ms);
+	return Number.isFinite(normalized) ? normalized : Date.now();
+}
+
 function get_info_request(password) {
 	const res = {
 		Header: {
@@ -49,6 +54,7 @@ function login_request(password) {
 function update_request(match, key_unicode, password, umpire_btp_id, service_judge_btp_id, court_btp_id, options = {}) {
 	assert(key_unicode);
 	const write_match_check_in_status = options.write_match_check_in_status !== false;
+	const current_now_ms = resolve_current_now_ms(options);
 	const matches = [];
 	const res = {
 		Header: {
@@ -77,6 +83,7 @@ function update_request(match, key_unicode, password, umpire_btp_id, service_jud
 	assert(match.btp_match_ids);
 	assert(match.btp_match_ids.length > 0);
 	const shuttle_count = match.shuttle_count;
+	const presses = Array.isArray(match.presses) ? match.presses : [];
 
 	for (const btp_m_id of match.btp_match_ids) {
 		assert(btp_m_id);
@@ -113,12 +120,12 @@ function update_request(match, key_unicode, password, umpire_btp_id, service_jud
 			}
 
 			let scoreStatus = 0; //Won normally
-			if(	(match.presses.length > 0 && match.presses[match.presses.length - 1].type == "retired") || 
-				(match.presses.length > 1 && match.presses[match.presses.length - 2].type == "retired")) {
+			if(	(presses.length > 0 && presses[presses.length - 1].type == "retired") || 
+				(presses.length > 1 && presses[presses.length - 2].type == "retired")) {
 				scoreStatus = 2; //retired
 			}
-			if(	(match.presses.length > 0 && match.presses[match.presses.length - 1].type == "disqualified") || 
-				(match.presses.length > 1 && match.presses[match.presses.length - 2].type == "disqualified")) {
+			if(	(presses.length > 0 && presses[presses.length - 1].type == "disqualified") || 
+				(presses.length > 1 && presses[presses.length - 2].type == "disqualified")) {
 				scoreStatus = 3; //disqualified
 			}
 
@@ -160,7 +167,7 @@ function update_request(match, key_unicode, password, umpire_btp_id, service_jud
 		matches.push({Match: m});
 	}
 
-	if (match.btp_player_ids && match.end_ts && (match.end_ts + 300000 > Date.now())) {
+	if (match.btp_player_ids && match.end_ts && (match.end_ts + 300000 > current_now_ms)) {
 		const players = [];
 		res.Update.Tournament.Players = players;
 		const end_date = new Date(match.end_ts);
