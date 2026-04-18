@@ -130,6 +130,8 @@ var ci18n_de = {
 	'display_setting:id': 'ID: ',
 	'display_setting:devicemode': 'Betriebsmodus: ',
 	'display_setting:style': 'Erscheinungsbild: ',
+	'display_setting:court': 'Angezeigtes Feld: ',
+	'display_setting:reverse_order': 'Reihenfolge der Felder umkehren',
 	'display_setting:show_pause': 'Zeige verbleibende Pausenzeit',
 	'display_setting:show_court_number': 'Zeige Spielfeldnummer',
 	'display_setting:show_competition': 'Zeige die Konkurenz',

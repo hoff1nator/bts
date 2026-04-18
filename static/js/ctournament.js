@@ -4044,7 +4044,7 @@ var ctournament = (function() {
 		render_edit_display_setting(form, display_setting);
 
 		const buttons = uiu.el(form, 'div', {
-			style: 'margin-top: 2em;',
+			style: 'margin-top: 2em; display: flex; gap: 0.75em; align-items: center; justify-content: center;',
 		});
 
 		const btn = uiu.el(buttons, 'button', {
@@ -4067,7 +4067,10 @@ var ctournament = (function() {
 			});
 		});
 
-		const cancel_btn = uiu.el(buttons, 'span', 'match_cancel_link vlink', ci18n('Cancel'));
+		const cancel_btn = uiu.el(buttons, 'button', {
+			type: 'button',
+			class: 'match_save_button',
+		}, ci18n('Cancel'));
 		cancel_btn.addEventListener('click', _cancel_ui_edit_display_setting);
 	}
 	crouting.register(/t\/([a-z0-9]+)\/edit\/s\/([-a-zA-Z0-9_ ]+)$/, function(m) {
@@ -4096,37 +4099,59 @@ var ctournament = (function() {
 				setup: {
 					match_id: 'preview_match',
 					match_name: 'Finale',
-					event_name: 'HD O19',
+					event_name: 'MX O55 (Demo)',
 					is_doubles: true,
 					teams: [{
-						name: 'BSC Hastedt',
+						name: 'TV Refrath',
 						players: [{
-							name: 'Max Mustermann',
-							firstname: 'Max',
-							lastname: 'Mustermann',
+							name: 'Stefan Frey',
+							firstname: 'Stefan',
+							lastname: 'Frey',
 						}, {
-							name: 'Paul Beispiel',
-							firstname: 'Paul',
-							lastname: 'Beispiel',
+							name: 'Heidi Bender',
+							firstname: 'Heidi',
+							lastname: 'Bender',
 						}],
 					}, {
-						name: 'TV Bremen-Walle',
+						name: 'BC Bischmisheim',
 						players: [{
-							name: 'Jan Vorbild',
-							firstname: 'Jan',
-							lastname: 'Vorbild',
+							name: 'Thomas Bunn',
+							firstname: 'Thomas',
+							lastname: 'Bunn',
 						}, {
-							name: 'Tom Muster',
-							firstname: 'Tom',
-							lastname: 'Muster',
+							name: 'Heike Bunn',
+							firstname: 'Heike',
+							lastname: 'Bunn',
 						}],
 					}],
 				},
-				network_score: [[21, 18], [12, 21], [19, 17]],
+				network_score: [[21, 18], [7, 7]],
 				network_team1_serving: true,
 				network_teams_player1_even: [true, false],
 			}],
 		};
+	}
+
+	function get_display_setting_primary_score_sequence() {
+		return [
+			[7, 7],
+			[8, 7],
+			[8, 8],
+			[9, 8],
+			[9, 9],
+			[10, 9],
+			[10, 10],
+			[11, 10],
+		];
+	}
+
+	function get_display_setting_preview_score(previewType) {
+		if (previewType === 'live') {
+			return [11, 8];
+		}
+		const seq = get_display_setting_primary_score_sequence();
+		const idx = Math.floor(Date.now() / 1000) % seq.length;
+		return seq[idx];
 	}
 
 	function get_display_setting_form_style(form) {
@@ -4345,9 +4370,8 @@ var ctournament = (function() {
 		const event = build_display_setting_preview_event();
 		const match = event.matches[0];
 		const colors = displaymode.calc_colors(settings, event, match);
-		const score = previewType === 'live'
-			? [11, 8]
-			: (match.network_score[match.network_score.length - 1] || [0, 0]);
+		const score = get_display_setting_preview_score(previewType);
+		match.network_score = [[21, 18], score.slice()];
 
 		uiu.empty(target);
 
@@ -4356,7 +4380,9 @@ var ctournament = (function() {
 		target.style.border = `1px solid ${colors.border}`;
 		target.style.borderRadius = '18px';
 		target.style.padding = '1rem';
-		target.style.minHeight = '260px';
+		target.style.minHeight = '0';
+		target.style.height = '100%';
+		target.style.width = '100%';
 		target.style.boxSizing = 'border-box';
 		target.style.position = 'relative';
 		target.style.overflow = 'hidden';
@@ -4965,6 +4991,7 @@ var ctournament = (function() {
 	function render_edit_display_setting(form, display_setting) {
 		const edit_display_setting_container = uiu.el(form, 'div', 'edit_display_setting_container');
 		let previewRenderTimer = null;
+		let previewAnimationTimer = null;
 		let lastPreviewRenderSignature = null;
 		const createSettingsSection = (title, className = '') => {
 			const section = uiu.el(edit_display_setting_container, 'section', {
@@ -5093,6 +5120,7 @@ var ctournament = (function() {
 			const anySelect = form.querySelector('select[name="devicemode"]');
 			return anySelect ? (anySelect.value || '') : '';
 		};
+		const isDisplayDeviceMode = () => getCurrentDeviceMode() !== 'umpire';
 
 
 		const devicemode_select = render_drop_down(
@@ -5112,6 +5140,13 @@ var ctournament = (function() {
 			});
 		}
 		const displaystyle_select = render_drop_down(primaryLayout.settingsColumn, ci18n('display_setting:style'), 'displaymode_style', (display_setting.devicemode === 'umpire' ? 'umpire' : true), displaymode.ALL_STYLES, display_setting.displaymode_style || '');
+		render_check_box(
+			secondaryLayout.settingsColumn,
+			ci18n('display_setting:reverse_order') || 'Reihenfolge umkehren',
+			'displaymode_reverse_order',
+			true,
+			display_setting.displaymode_reverse_order
+		);
 		const collectPreviewRenderSignature = () => JSON.stringify(Object.fromEntries(new FormData(form).entries()));
 		const renderAllDisplaySettingPreviews = (force = false) => {
 			const signature = collectPreviewRenderSignature();
@@ -5130,6 +5165,19 @@ var ctournament = (function() {
 				previewRenderTimer = null;
 				renderAllDisplaySettingPreviews(force);
 			}, delay);
+		};
+		const ensureDisplayPreviewAnimation = () => {
+			if (previewAnimationTimer) {
+				window.clearInterval(previewAnimationTimer);
+				previewAnimationTimer = null;
+			}
+			previewAnimationTimer = window.setInterval(() => {
+				const currentMode = getCurrentDeviceMode();
+				if (currentMode !== 'display') {
+					return;
+				}
+				render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
+			}, 1000);
 		};
 		
 		displaystyle_select.addEventListener('change', (e) => {
@@ -5222,6 +5270,7 @@ var ctournament = (function() {
 		updateSecondarySectionMode();
 		update_edit_display_setting(get_display_setting_form_style(form));
 		renderAllDisplaySettingPreviews(true);
+		ensureDisplayPreviewAnimation();
 	}
 
 	function render_drop_down(container, label_text, select_name, displaystyle, values, curval, labels) {
@@ -5302,6 +5351,8 @@ var ctournament = (function() {
 			description: d.display_setting_description || '',
 			devicemode: d.devicemode || 'display',
 			displaymode_style: d.displaymode_style || 'tournamentcourt',
+			displaymode_court_id: d.displaymode_court_id || '',
+			displaymode_reverse_order: d.displaymode_reverse_order == 'on' ? true : false,
 			d_show_pause: d.show_pause == 'on' ? true : false,
 			d_show_court_number: d.show_court_number == 'on' ? true : false,
 			d_show_competition: d.show_competition == 'on' ? true : false,
@@ -5352,15 +5403,28 @@ var ctournament = (function() {
 
 	function update_edit_display_setting(displaystyle)
 	{
-		const names = [ 'displaymode_style', 'show_pause', 'show_court_number', 'show_competition', 'show_round', 'show_middle_name', 'show_doubles_receiving', 
+		const form = document.querySelector('.display_setting_edit_dialog form');
+		const devicemodeInput = form ? form.querySelector('[name="devicemode"]') : null;
+		const currentDeviceMode = devicemodeInput ? (devicemodeInput.value || '') : 'display';
+		const isDisplayMode = currentDeviceMode !== 'umpire';
+		const names = [ 'displaymode_style', 'displaymode_reverse_order', 'show_pause', 'show_court_number', 'show_competition', 'show_round', 'show_middle_name', 'show_doubles_receiving', 
 						'c0', 'c1', 'cb0', 'cb1', 'cbg', 'cbg2', 'cbg3', 'cbg4', 'cfg', 'cfg2', 'cfg3', 'cfg4', 'cfgdark', 'cexp', 'ct', 
 						'cborder', 'cserv', 'cserv2', 'crecv', 'ctim_blue', 'ctim_active', 'team_colors', 'scale',
 						'show_announcements', 'neversettings', 'button_block_timeout', 'negative_timers', 'shuttle_counter', 'editmode_doubleclick', 
 						'click_mode', 'style', 'language'];
 		
 		names.forEach((field_name) => {
-			const update = uiu.qs('[field_name='+field_name+']');
-			uiu.visible(update, (displaystyle === true || displaymode.option_applies(displaystyle, field_name)));
+			const update = form ? form.querySelector(`[field_name="${field_name}"]`) : null;
+			if (!update) {
+				return;
+			}
+			let isVisible = (displaystyle === true || displaymode.option_applies(displaystyle, field_name));
+			if (field_name === 'displaymode_style') {
+				isVisible = isDisplayMode;
+			} else if (field_name === 'displaymode_reverse_order') {
+				isVisible = isDisplayMode && displaymode.option_applies(displaystyle, 'reverse_order');
+			}
+			uiu.visible(update, isVisible);
 		});
 	}
 

@@ -130,6 +130,8 @@ var ci18n_en = {
 	'display_setting:id': 'ID:',
 	'display_setting:wakelock': 'Operating mode: ',
 	'display_setting:style': 'Style: ',	
+	'display_setting:court': 'Displayed court: ',
+	'display_setting:reverse_order': 'Reverse court order',
 	'display_setting:show_pause': 'Show interval timer',
 	'display_setting:show_court_number': 'Show court number',
 	'display_setting:show_competition': 'Show the competition',

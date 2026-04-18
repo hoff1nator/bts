@@ -95,6 +95,8 @@ var ci18n_nl = {
 	'display_setting:id': 'ID:',
 	'display_setting:wakelock': 'Bedrijfsmodus: ',
 	'display_setting:style': 'Stijl: ',	
+	'display_setting:court': 'Getoonde baan: ',
+	'display_setting:reverse_order': 'Baanvolgorde omkeren',
 	'display_setting:show_pause': 'Toon interval timer',
 	'display_setting:show_court_number': 'Toon baannummer',
 	'display_setting:show_competition': 'Toon de competitie',
