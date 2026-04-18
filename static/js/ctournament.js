@@ -4548,8 +4548,17 @@ var ctournament = (function() {
 		});
 	}
 
-	function create_tablet_preview_demo_state(nowTs) {
-		const intervalTriggerTs = nowTs - 45000;
+	function create_tablet_preview_demo_state(nowTs, options = {}) {
+		const score = Array.isArray(options.score) ? options.score.slice(0, 2) : [10, 8];
+		const intervalRemainingMs = options.intervalRemainingMs;
+		const hasInterval = Number.isFinite(intervalRemainingMs);
+		const intervalDurationMs = 60000;
+		const boundedRemainingMs = hasInterval
+			? Math.max(-60000, Math.min(intervalDurationMs, intervalRemainingMs))
+			: null;
+		const scoreTimestamp = hasInterval
+			? nowTs - (intervalDurationMs - boundedRemainingMs)
+			: nowTs - 1000;
 		return {
 			metadata: {
 				id: 'tdemo_match_42',
@@ -4586,29 +4595,110 @@ var ctournament = (function() {
 				{
 					type: 'pick_side',
 					team1_left: true,
-					timestamp: intervalTriggerTs - 3000,
+					timestamp: scoreTimestamp - 3000,
 				},
 				{
 					type: 'pick_server',
 					team_id: 0,
 					player_id: 0,
-					timestamp: intervalTriggerTs - 2000,
+					timestamp: scoreTimestamp - 2000,
 				},
 				{
 					type: 'pick_receiver',
 					team_id: 1,
 					player_id: 0,
-					timestamp: intervalTriggerTs - 1000,
+					timestamp: scoreTimestamp - 1000,
+				},
+				{
+					type: 'editmode_set-finished_games',
+					scores: [[21, 18]],
+					by_side: false,
+					timestamp: scoreTimestamp - 500,
 				},
 				{
 					type: 'editmode_set-score',
-					score: [11, 8],
+					score,
 					by_side: false,
 					resumed: true,
-					timestamp: intervalTriggerTs,
+					timestamp: scoreTimestamp,
 				},
 			],
 		};
+	}
+
+	function update_live_tablet_preview_match(iframe, options = {}) {
+		if (!iframe || !iframe.contentWindow) {
+			return false;
+		}
+		const iframeWindow = iframe.contentWindow;
+		const nowTs = Date.now();
+		const demoState = create_tablet_preview_demo_state(nowTs, options);
+		try {
+			iframeWindow.localStorage.setItem(
+				'bup_match_tdemo_match_42',
+				JSON.stringify(demoState)
+			);
+		} catch (_err) {
+		}
+		try {
+			if (
+				iframeWindow.control &&
+				typeof iframeWindow.control.resume_match === 'function'
+			) {
+				iframeWindow.control.resume_match(demoState);
+				return true;
+			}
+		} catch (_err) {
+		}
+		return false;
+	}
+
+	function sync_live_tablet_preview_cycle(existingState) {
+		if (!existingState || existingState.previewType !== 'live' || !existingState.iframe) {
+			return;
+		}
+		const nowTs = Date.now();
+		if (!Number.isFinite(existingState.cycleStartedAt)) {
+			existingState.cycleStartedAt = nowTs;
+		}
+		const pointDelayMs = 1500;
+		const intervalDurationMs = 60000;
+		const intervalStartTs = existingState.cycleStartedAt + pointDelayMs;
+		if (nowTs < intervalStartTs) {
+			if (existingState.phase !== 'pregame-score') {
+				existingState.phase = 'pregame-score';
+				update_live_tablet_preview_match(existingState.iframe, {
+					score: [10, 8],
+				});
+			}
+			return;
+		}
+
+		const intervalRemainingMs = intervalDurationMs - (nowTs - intervalStartTs);
+		if (intervalRemainingMs <= -10000) {
+			existingState.cycleStartedAt = nowTs;
+			existingState.phase = 'pregame-score';
+			update_live_tablet_preview_match(existingState.iframe, {
+				score: [10, 8],
+			});
+			return;
+		}
+
+		existingState.phase = 'interval';
+		update_live_tablet_preview_match(existingState.iframe, {
+			score: [11, 8],
+			intervalRemainingMs,
+		});
+	}
+
+	function ensure_live_tablet_preview_timer(existingState) {
+		if (!existingState || existingState.previewType !== 'live' || existingState.timerIntervalId) {
+			return;
+		}
+		sync_live_tablet_preview_cycle(existingState);
+		existingState.timerIntervalId = window.setInterval(() => {
+			sync_live_tablet_preview_cycle(existingState);
+		}, 1000);
 	}
 
 	function build_tablet_preview_bup_settings(previewSettings, previewType) {
@@ -4671,10 +4761,17 @@ var ctournament = (function() {
 		try {
 			iframeWindow.localStorage.setItem('bup_settings', JSON.stringify(effectiveSettings));
 			if (previewType === 'live') {
-				iframeWindow.localStorage.setItem(
-					'bup_match_tdemo_match_42',
-					JSON.stringify(create_tablet_preview_demo_state(nowTs))
-				);
+				if (iframe._previewState && iframe._previewState.previewType === 'live') {
+					sync_live_tablet_preview_cycle(iframe._previewState);
+				} else {
+					update_live_tablet_preview_match(iframe, {
+						score: [10, 8],
+					});
+				}
+			} else {
+				update_live_tablet_preview_match(iframe, {
+					score: [10, 8],
+				});
 			}
 		} catch (_err) {
 		}
@@ -4734,9 +4831,14 @@ var ctournament = (function() {
 		const existing = previewBody._tabletPreviewState;
 		if (existing && existing.iframe && existing.previewType === previewType) {
 			if (apply_tablet_preview_settings(existing.iframe, previewSettings, previewType)) {
+				ensure_live_tablet_preview_timer(existing);
 				return true;
 			}
 			return true;
+		}
+
+		if (existing && existing.timerIntervalId) {
+			window.clearInterval(existing.timerIntervalId);
 		}
 
 		uiu.empty(previewBody);
@@ -4774,7 +4876,7 @@ var ctournament = (function() {
 		});
 		const iframeSrc = previewType === 'live'
 			? `${window.location.origin}/bup/#tdemo&m=tdemo_match_42`
-			: `${window.location.origin}/bup/#tdemo&settings&court=referee&lang=de`;
+			: `${window.location.origin}/bup/#tdemo&m=tdemo_match_42&settings&court=referee&lang=de`;
 		const iframe = uiu.el(viewport, 'iframe', {
 			class: 'bup_preview_frame',
 			src: iframeSrc,
@@ -4793,11 +4895,16 @@ var ctournament = (function() {
 		previewBody._tabletPreviewState = {
 			previewType,
 			iframe,
+			timerIntervalId: null,
+			cycleStartedAt: previewType === 'live' ? Date.now() : null,
+			phase: null,
 		};
+		iframe._previewState = previewBody._tabletPreviewState;
 
 		iframe.addEventListener('load', () => {
 			window.setTimeout(() => {
 				apply_tablet_preview_settings(iframe, previewSettings, previewType);
+				ensure_live_tablet_preview_timer(previewBody._tabletPreviewState);
 			}, 100);
 		});
 
