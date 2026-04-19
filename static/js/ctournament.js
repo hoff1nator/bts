@@ -22,6 +22,7 @@ let preparation_selection_request_pending = false;
 let btp_next_fetch_countdown_interval = null;
 let speech_output_badge_listener_registered = false;
 let test_clock_controls = null;
+let test_clock_status_interval = null;
 const ANNOUNCEMENT_SPEECH_CHECK_STATE_STORAGE_KEY = 'bts_announcement_speech_check_state';
 
 var ctournament = (function() {
@@ -476,6 +477,7 @@ var ctournament = (function() {
 			'preparation_call_time_ahead_of_frontier_minutes',
 			'preparation_call_matches_ahead_of_frontier_enabled',
 			'preparation_call_matches_ahead_of_frontier_limit',
+			'preparation_call_debug_output_enabled',
 			'preparation_call_technical_officials_available_enabled',
 		].forEach(field_name => _set_disabled_by_name(field_name, !preparation_automation_enabled));
 		const call_on_court_automation_enabled = !!curt.call_next_possible_scheduled_match_in_preparation;
@@ -1513,22 +1515,12 @@ var ctournament = (function() {
 		return Date.now();
 	}
 
-	function update_test_clock_controls() {
-		if (!test_clock_controls) {
+	function update_test_clock_status() {
+		if (!test_clock_controls || !test_clock_controls.status) {
 			return;
 		}
 		const clock = curt?.test_clock || { mode: 'real', fixed_ts: null, offset_ms: 0 };
 		const mode = clock.mode || 'real';
-		test_clock_controls.mode_select.value = mode;
-		test_clock_controls.fixed_input.value =
-			(mode === 'fixed' && Number.isFinite(Number(clock.fixed_ts)))
-				? format_datetime_local_input_value(new Date(Number(clock.fixed_ts)))
-				: format_datetime_local_input_value(new Date(get_effective_test_clock_now_ms()));
-		test_clock_controls.offset_input.value = String(Math.round((Number(clock.offset_ms) || 0) / 60000));
-		test_clock_controls.real_section.style.display = mode === 'real' ? '' : 'none';
-		test_clock_controls.fixed_section.style.display = mode === 'fixed' ? '' : 'none';
-		test_clock_controls.offset_section.style.display = mode === 'offset' ? '' : 'none';
-		test_clock_controls.freeze_now_btn.style.display = mode === 'fixed' ? '' : 'none';
 		const effective_now = new Date(get_effective_test_clock_now_ms());
 		let mode_label = 'Echtzeit (Produktivmodus)';
 		if (mode === 'fixed') {
@@ -1540,6 +1532,59 @@ var ctournament = (function() {
 			test_clock_controls.status,
 			`Aktiv: ${mode_label} | BTS-Zeit: ${effective_now.toLocaleString('de-DE')}`
 		);
+	}
+
+	function update_test_clock_body_state() {
+		if (!document.body) {
+			return;
+		}
+		const mode = (curt?.test_clock?.mode || 'real');
+		document.body.classList.toggle('bts_clock_debug_mode', mode !== 'real');
+		document.body.classList.toggle('bts_clock_debug_mode_fixed', mode === 'fixed');
+		document.body.classList.toggle('bts_clock_debug_mode_offset', mode === 'offset');
+	}
+
+	function update_test_clock_mode_visibility() {
+		if (!test_clock_controls) {
+			return;
+		}
+		const mode = test_clock_controls.mode_select.value || 'real';
+		test_clock_controls.real_section.style.display = mode === 'real' ? '' : 'none';
+		test_clock_controls.fixed_section.style.display = mode === 'fixed' ? '' : 'none';
+		test_clock_controls.offset_section.style.display = mode === 'offset' ? '' : 'none';
+		test_clock_controls.freeze_now_btn.style.display = mode === 'fixed' ? '' : 'none';
+	}
+
+	function ensure_test_clock_status_interval() {
+		if (test_clock_status_interval != null) {
+			return;
+		}
+		test_clock_status_interval = window.setInterval(() => {
+			if (!test_clock_controls || !test_clock_controls.status || !document.body.contains(test_clock_controls.status)) {
+				window.clearInterval(test_clock_status_interval);
+				test_clock_status_interval = null;
+				return;
+			}
+			update_test_clock_status();
+		}, 1000);
+	}
+
+	function update_test_clock_controls() {
+		update_test_clock_body_state();
+		if (!test_clock_controls) {
+			return;
+		}
+		const clock = curt?.test_clock || { mode: 'real', fixed_ts: null, offset_ms: 0 };
+		const mode = clock.mode || 'real';
+		test_clock_controls.mode_select.value = mode;
+		test_clock_controls.fixed_input.value =
+			(mode === 'fixed' && Number.isFinite(Number(clock.fixed_ts)))
+				? format_datetime_local_input_value(new Date(Number(clock.fixed_ts)))
+				: format_datetime_local_input_value(new Date(get_effective_test_clock_now_ms()));
+		test_clock_controls.offset_input.value = String(Math.round((Number(clock.offset_ms) || 0) / 60000));
+		update_test_clock_mode_visibility();
+		update_test_clock_status();
+		ensure_test_clock_status_interval();
 	}
 
 	function send_test_clock_update(payload, callback) {
@@ -2321,6 +2366,7 @@ var ctournament = (function() {
 		current_view = 'show'
 		crouting.set('t/:key/', { key: curt.key });
 		render_show_toprow();
+		update_test_clock_body_state();
 
 		const main = uiu.qs('.main');
 		uiu.empty(main);
@@ -2488,6 +2534,7 @@ var ctournament = (function() {
 		current_view = 'edit';
 		crouting.set('t/:key/edit', { key: curt.key });
 		render_edit_toprow();
+		update_test_clock_body_state();
 
 		const main = uiu.qs('.main');
 		uiu.empty(main);
@@ -2642,7 +2689,7 @@ var ctournament = (function() {
 			};
 			update_test_clock_controls();
 
-			clock_mode_select.addEventListener('change', update_test_clock_controls);
+			clock_mode_select.addEventListener('change', update_test_clock_mode_visibility);
 
 			apply_clock_btn.addEventListener('click', () => {
 				if (clock_mode_select.value === 'fixed') {
@@ -2921,6 +2968,22 @@ var ctournament = (function() {
 				const rule = create_rule_limit_input(curt, bts_fieldset, 'preparation_call_matches_ahead_of_frontier_enabled', 'preparation_call_matches_ahead_of_frontier_limit', 1, 0, 50, 1, null);
 				input.preparation_call_matches_ahead_of_frontier_enabled = rule.enabled_input;
 				input.preparation_call_matches_ahead_of_frontier_limit = rule.value_input;
+			}
+			{
+				const debug_output_label = uiu.el(bts_fieldset, 'label', 'automation_suboption_checkbox');
+				input.preparation_call_debug_output_enabled = uiu.el(debug_output_label, 'input', {
+					type: 'checkbox',
+					name: 'preparation_call_debug_output_enabled',
+					checked: curt.preparation_call_debug_output_enabled ? 'checked' : undefined,
+				});
+				uiu.el(debug_output_label, 'span', {}, 'Debug-Ausgabe fuer Aufrufgrenze');
+				bind_live_prop(input.preparation_call_debug_output_enabled, 'preparation_call_debug_output_enabled', {
+					on_success: function() {
+						uiu.qsEach('.unassigned_container', function(unassigned_container) {
+							cmatch.render_unassigned(unassigned_container);
+						});
+					},
+				});
 			}
 			const free_courts_fieldset = uiu.el(tournament_flow_div, 'fieldset', 'automation_group_box');
 			const free_courts_legend = uiu.el(free_courts_fieldset, 'legend');
@@ -6584,7 +6647,8 @@ function update_official_tables(officials_host) {
     if (!Number.isFinite(pause_target_ts)) {
       return null;
     }
-    const remaining_ms = Math.max(0, pause_target_ts - Date.now());
+    const now_ms = get_effective_test_clock_now_ms();
+    const remaining_ms = Math.max(0, pause_target_ts - now_ms);
     return {
       settings: {
         negative_timers: false,
@@ -6592,7 +6656,7 @@ function update_official_tables(officials_host) {
       lang: 'de',
       timer: {
         duration: remaining_ms,
-        start: Date.now(),
+        start: now_ms,
         upwards: false,
         exigent: false,
       },
@@ -8544,6 +8608,7 @@ function update_officials() {
 		options = options || {};
 		crouting.set(route, { key: curt.key });
 		toprow.hide();
+		update_test_clock_body_state();
 		const main = uiu.qs('.main');
 		uiu.empty(main);
 		main.classList.remove('main_upcoming', 'main_self_check_in');

@@ -900,6 +900,11 @@ match_manual_call_button,
 	background-color: #ffffff;
 }
 
+.unassigned_container .highlight_0,
+.finished_container .highlight_0 {
+	background-color: transparent;
+}
+
 .highlight_1 {
 	background-color: #ffd838;
 }
@@ -1006,6 +1011,40 @@ td.call_td {
 .match_table > tbody > tr.preparation_callable:hover > td.call_td {
 	background-image: linear-gradient(to right, rgba(139, 199, 232, 0.04) 0%, rgba(139, 199, 232, 0.26) 55%, rgba(110, 180, 219, 0.85) 100%);
 	box-shadow: inset -3px 0 0 #6eb4db;
+}
+
+.match_table > tbody > tr.preparation_frontier > td.call_td {
+	background-image: linear-gradient(to right, rgba(224, 88, 88, 0) 0%, rgba(224, 88, 88, 0.22) 55%, rgba(224, 88, 88, 0.88) 100%);
+	box-shadow: inset -3px 0 0 #e05858;
+	border-top-right-radius: 10px;
+	border-bottom-right-radius: 10px;
+	background-clip: padding-box;
+}
+
+.match_table > tbody > tr.preparation_frontier:hover > td.call_td {
+	background-image: linear-gradient(to right, rgba(224, 88, 88, 0.05) 0%, rgba(224, 88, 88, 0.30) 55%, rgba(205, 65, 65, 0.88) 100%);
+	box-shadow: inset -3px 0 0 #cd4141;
+}
+
+.preparation_frontier_debug {
+	margin: 0 1% 0.55rem 1%;
+	padding: 0.45rem 0.65rem;
+	font-size: 0.92rem;
+	line-height: 1.35;
+	color: #6d2525;
+	background: rgba(255, 240, 240, 0.9);
+	border: 1px solid rgba(224, 88, 88, 0.35);
+	border-radius: 8px;
+}
+
+.preparation_frontier_debug_label {
+	font-weight: 700;
+	margin-right: 0.55rem;
+}
+
+.preparation_frontier_debug_entry {
+	display: inline-block;
+	margin-right: 0.9rem;
 }
 
 .name {

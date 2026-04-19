@@ -38,9 +38,6 @@ function get_effective_test_clock_now_ms() {
 	if (clock.mode === 'offset' && Number.isFinite(Number(clock.offset_ms))) {
 		return Date.now() + Number(clock.offset_ms);
 	}
-	if (Number.isFinite(Number(clock.effective_now_ms))) {
-		return Number(clock.effective_now_ms);
-	}
 	return Date.now();
 }
 
@@ -1268,22 +1265,46 @@ function create_timer(timer_state, parent, default_color, exigent_color) {
 	var bgColor = timer_state.bgColor;
 	let el = uiu.el(parent, 'div', { class: 'timer', style: ('background-color:' + bgColor +'; color:' + default_color +';')}, tv.str);
 	
-	var tobj = {}
+	var tobj = {};
+	var has_been_attached = false;
+
+	var clear_pending_update = function() {
+		if (tobj.timeout != null) {
+			clearTimeout(tobj.timeout);
+			tobj.timeout = null;
+		}
+	};
 
 	var update = function() {
+		const is_attached = document.body.contains(el);
+		if (is_attached) {
+			has_been_attached = true;
+		} else if (has_been_attached) {
+			clear_pending_update();
+			return;
+		}
+
 		var tv = timer.calc(timer_state, get_effective_test_clock_now_ms());
+		if (!tv) {
+			clear_pending_update();
+			el.style.display = "none";
+			return;
+		}
+
 		var visible = tv.visible;
 
 		uiu.text (el, tv.str);
-		if(tv.exigent && exigent_color){
-			el.style.color = exigent_color;
-		}
+		el.style.color = (tv.exigent && exigent_color) ? exigent_color : default_color;
 
-		if (visible && tv.next) {
-			tobj.timeout = setTimeout(update, tv.next);
+		clear_pending_update();
+		if (visible) {
+			const requested_delay = Number(tv.next);
+			const next_delay = Number.isFinite(requested_delay)
+				? Math.max(250, Math.min(1000, requested_delay))
+				: 1000;
+			tobj.timeout = setTimeout(update, next_delay);
 			el.style.display = "inline-block";
 		} else {
-			tobj.timeout = null;
 			el.style.display = "none";
 		}
 	};
@@ -2052,9 +2073,64 @@ function get_preparation_callable_match_ids() {
 	return result;
 }
 
+function get_preparation_cutoff_match_ids() {
+	const result = new Set();
+	const selections_by_location_id = (curt && curt.location_preparation_selection_by_location_id) || {};
+	for (const selection of Object.values(selections_by_location_id)) {
+		const cutoff_match_id = selection && selection.display_cutoff_match_id;
+		if (cutoff_match_id != null) {
+			result.add(String(cutoff_match_id));
+		}
+	}
+	return result;
+}
+
+function get_preparation_frontier_match_ids() {
+	const result = new Set();
+	const selections_by_location_id = (curt && curt.location_preparation_selection_by_location_id) || {};
+	for (const selection of Object.values(selections_by_location_id)) {
+		const frontier_match_id = selection && selection.display_frontier_match_id;
+		if (frontier_match_id != null) {
+			result.add(String(frontier_match_id));
+		}
+	}
+	return result;
+}
+
+function get_preparation_frontier_debug_entries() {
+	const selections_by_location_id = (curt && curt.location_preparation_selection_by_location_id) || {};
+	const locations_by_id = new Map((curt && curt.locations || []).map((location) => [String(location._id), location]));
+	return Object.entries(selections_by_location_id)
+		.map(([location_id, selection]) => {
+			const location = locations_by_id.get(String(location_id));
+			const location_name = location ? (location.name || location.short_name || ('Standort ' + location_id)) : ('Standort ' + location_id);
+			const frontier_match_num = selection && selection.display_frontier_match_num;
+			return {
+				location_id: String(location_id),
+				location_name,
+				frontier_match_num: frontier_match_num != null ? frontier_match_num : null,
+			};
+		})
+		.sort((a, b) => a.location_name.localeCompare(b.location_name, 'de'));
+}
+
+function preparation_call_debug_output_enabled() {
+	return !!(curt && curt.preparation_call_debug_output_enabled);
+}
+
 function render_unassigned(container) {
 	uiu.empty(container);
 	uiu.el(container, 'h3', 'section', ci18n('Unassigned Matches'));
+
+	const frontier_debug_entries = preparation_call_debug_output_enabled() ? get_preparation_frontier_debug_entries() : [];
+	if (frontier_debug_entries.length) {
+		const debug_container = uiu.el(container, 'div', 'preparation_frontier_debug');
+		uiu.el(debug_container, 'span', 'preparation_frontier_debug_label', 'Frontier-Debug:');
+		frontier_debug_entries.forEach((entry) => {
+			const text = entry.location_name + ': Frontier ' + (entry.frontier_match_num != null ? ('#' + entry.frontier_match_num) : 'keines');
+			uiu.el(debug_container, 'span', 'preparation_frontier_debug_entry', text);
+		});
+	}
 
 	const unassigned_matches = curt.matches.filter((m) => {
 		if (calc_section(m) !== 'unassigned') {
@@ -2066,23 +2142,25 @@ function render_unassigned(container) {
 		return true;
 	});
 	const callable_match_ids = get_preparation_callable_match_ids();
-	const last_callable_index = unassigned_matches.reduce((last_index, match, index) => {
-		return callable_match_ids.has(String(match._id)) ? index : last_index;
-	}, -1);
+	const cutoff_match_ids = get_preparation_cutoff_match_ids();
+	const frontier_match_ids = preparation_call_debug_output_enabled() ? get_preparation_frontier_match_ids() : new Set();
 
 	const table = uiu.el(container, 'table', 'match_table');
 	render_match_table_header(table, true);
 	const tbody = uiu.el(table, 'tbody');
 
-	unassigned_matches.forEach((match, index) => {
+	unassigned_matches.forEach((match) => {
 		if (!match.setup.is_match) {
 			return;
 		}
 		const is_callable_for_preparation = callable_match_ids.has(String(match._id));
+		const is_cutoff_for_preparation = cutoff_match_ids.has(String(match._id));
+		const is_frontier_for_preparation = frontier_match_ids.has(String(match._id));
 		const tr = uiu.el(tbody, 'tr', {
 			'class': 'match highlight_' + match.setup.highlight
+				+ (is_frontier_for_preparation ? ' preparation_frontier' : '')
 				+ (is_callable_for_preparation ? ' preparation_callable' : '')
-				+ (index === last_callable_index ? ' preparation_call_cutoff' : ''),
+				+ (is_cutoff_for_preparation ? ' preparation_call_cutoff' : ''),
 			'data-match_id': match._id,
 		});
 		if (is_callable_for_preparation) {

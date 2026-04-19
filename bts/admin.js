@@ -147,6 +147,7 @@ function handle_tournament_edit_props(app, ws, msg) {
 		'preparation_call_matches_ahead_of_frontier_enabled',
 		'preparation_call_matches_ahead_of_frontier_limit',
 		'preparation_call_player_pause_expired_enabled',
+		'preparation_call_debug_output_enabled',
 		'preparation_call_technical_officials_available_enabled',
 		'call_on_court_time_limit_before_scheduled_enabled',
 		'call_on_court_time_limit_before_scheduled_minutes',
@@ -276,6 +277,7 @@ function handle_tournament_edit_prop(app, ws, msg) {
 		'preparation_call_matches_ahead_of_frontier_enabled',
 		'preparation_call_matches_ahead_of_frontier_limit',
 		'preparation_call_player_pause_expired_enabled',
+		'preparation_call_debug_output_enabled',
 		'preparation_call_technical_officials_available_enabled',
 		'call_on_court_time_limit_before_scheduled_enabled',
 		'call_on_court_time_limit_before_scheduled_minutes',
@@ -829,6 +831,8 @@ async function async_handle_preparation_selection_get(app, ws, msg) {
 			display_candidate_match_nums: selection.display_candidates.map((match) => match?.setup?.match_num).filter((num) => num != null),
 			display_frontier_match_id: selection.display_frontier?._id || null,
 			display_frontier_match_num: selection.display_frontier?.setup?.match_num ?? null,
+			display_cutoff_match_id: selection.display_cutoff?._id || null,
+			display_cutoff_match_num: selection.display_cutoff?.setup?.match_num ?? null,
 		})),
 	});
 }
