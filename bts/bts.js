@@ -102,6 +102,7 @@ function create_app(config, db) {
 	app.use(body_parser.json());
 	app.get('/h/:tournament_key/m/:match_id/info', http_api.matchinfo_handler);
 	app.get('/h/:tournament_key/logo/:logo_id', http_api.logo_handler);
+	app.get('/h/preview/display/:variant.json', http_api.display_preview_handler);
 
 	var server = null;
 	if (config.enable_https) {

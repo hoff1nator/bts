@@ -4165,26 +4165,28 @@ var ctournament = (function() {
 					event_name: 'MX O55 (Demo)',
 					is_doubles: true,
 					teams: [{
-						name: 'TV Refrath',
+						name: 'TV Musterstadt',
 						players: [{
-							name: 'Stefan Frey',
-							firstname: 'Stefan',
-							lastname: 'Frey',
+							name: 'Max Emil Mustermann',
+							firstname: 'Max',
+							middlename: 'Emil',
+							lastname: 'Mustermann',
 						}, {
-							name: 'Heidi Bender',
-							firstname: 'Heidi',
-							lastname: 'Bender',
+							name: 'Lena Beispiel',
+							firstname: 'Lena',
+							lastname: 'Beispiel',
 						}],
 					}, {
-						name: 'BC Bischmisheim',
+						name: 'BC Beispielheim',
 						players: [{
-							name: 'Thomas Bunn',
-							firstname: 'Thomas',
-							lastname: 'Bunn',
+							name: 'Timo Testfeld',
+							firstname: 'Timo',
+							lastname: 'Testfeld',
 						}, {
-							name: 'Heike Bunn',
-							firstname: 'Heike',
-							lastname: 'Bunn',
+							name: 'Mia Sophie Demo',
+							firstname: 'Mia',
+							middlename: 'Sophie',
+							lastname: 'Demo',
 						}],
 					}],
 				},
@@ -4197,24 +4199,79 @@ var ctournament = (function() {
 
 	function get_display_setting_primary_score_sequence() {
 		return [
-			[7, 7],
-			[8, 7],
-			[8, 8],
-			[9, 8],
-			[9, 9],
-			[10, 9],
-			[10, 10],
-			[11, 10],
+			[12, 5],
+			[13, 5],
+			[13, 6],
+			[14, 6],
+			[15, 6],
+			[15, 7],
+			[16, 7],
+			[17, 7],
+			[17, 8],
+			[18, 8],
+			[18, 9],
+			[19, 9],
+			[20, 9],
+			[20, 10],
+			[21, 10],
 		];
 	}
 
-	function get_display_setting_preview_score(previewType) {
-		if (previewType === 'live') {
+	function get_display_setting_preview_score(previewState, options = {}) {
+		if (!previewState) {
 			return [11, 8];
 		}
+		if (previewState.previewType === 'live') {
+			const nowTs = Date.now();
+			const phases = [
+				{ score: [10, 4], durationMs: 2500 },
+				{ score: [11, 4], durationMs: 80000 },
+				{ score: [11, 5], durationMs: 4000 },
+			];
+			const currentPhaseIndex = Math.max(0, Math.min(previewState.livePhaseIndex || 0, phases.length - 1));
+			if (!previewState.livePhaseStartedAt) {
+				previewState.livePhaseStartedAt = nowTs;
+			}
+			const currentPhase = phases[currentPhaseIndex];
+			if (options.advance && (nowTs - previewState.livePhaseStartedAt) >= currentPhase.durationMs) {
+				previewState.livePhaseIndex = (currentPhaseIndex + 1) % phases.length;
+				previewState.livePhaseStartedAt = nowTs;
+				return phases[previewState.livePhaseIndex].score;
+			}
+			return currentPhase.score;
+		}
 		const seq = get_display_setting_primary_score_sequence();
-		const idx = Math.floor(Date.now() / 1000) % seq.length;
-		return seq[idx];
+		const idx = Math.max(0, Math.min(previewState.sequenceIndex || 0, seq.length - 1));
+		const score = seq[idx];
+		if (!previewState.primaryStepStartedAt) {
+			previewState.primaryStepStartedAt = Date.now();
+		}
+		if (options.advance && (Date.now() - previewState.primaryStepStartedAt) >= 2500) {
+			previewState.sequenceIndex = (idx + 1) % seq.length;
+			previewState.primaryStepStartedAt = Date.now();
+		}
+		return score;
+	}
+
+	function get_display_preview_next_update_delay(previewState) {
+		if (!previewState) {
+			return 2500;
+		}
+		if (previewState.previewType === 'live') {
+			const phases = [
+				{ durationMs: 2500 },
+				{ durationMs: 80000 },
+				{ durationMs: 4000 },
+			];
+			const currentPhaseIndex = Math.max(0, Math.min(previewState.livePhaseIndex || 0, phases.length - 1));
+			const currentPhase = phases[currentPhaseIndex];
+			const startedAt = Number.isFinite(previewState.livePhaseStartedAt) ? previewState.livePhaseStartedAt : Date.now();
+			const remainingMs = currentPhase.durationMs - (Date.now() - startedAt);
+			return Math.max(100, remainingMs);
+		}
+		const startedAt = Number.isFinite(previewState.primaryStepStartedAt) ? previewState.primaryStepStartedAt : Date.now();
+		const remainingMs = 2500 - (Date.now() - startedAt);
+		return Math.max(100, remainingMs);
 	}
 
 	function get_display_setting_form_style(form) {
@@ -4427,6 +4484,681 @@ var ctournament = (function() {
 				style || '',
 			].join(';'),
 		}, text);
+	}
+
+	function build_display_preview_bup_settings(previewSettings) {
+		return Object.assign({}, previewSettings, {
+			court_id: 'tdemo_5',
+			displaymode_court_id: 'tdemo_5',
+			court_description: '',
+			language: previewSettings.language || 'de',
+		});
+	}
+
+	function ensure_display_preview_visible(iframeWindow) {
+		try {
+			if (
+				iframeWindow.displaymode &&
+				typeof iframeWindow.displaymode.show === 'function' &&
+				iframeWindow.state &&
+				iframeWindow.state.ui &&
+				!iframeWindow.state.ui.displaymode_visible
+			) {
+				iframeWindow.displaymode.show();
+			}
+		} catch (_err) {
+		}
+	}
+
+	function get_display_preview_match(iframeWindow) {
+		const event = iframeWindow && iframeWindow.state && iframeWindow.state.event;
+		if (!event || !Array.isArray(event.matches)) {
+			return null;
+		}
+		return event.matches.find((match) => match && match.setup && match.setup.match_id === 'tdemo_match_42')
+			|| event.matches[0]
+			|| null;
+	}
+
+	function get_display_preview_court(iframeWindow) {
+		const event = iframeWindow && iframeWindow.state && iframeWindow.state.event;
+		if (!event || !Array.isArray(event.courts)) {
+			return null;
+		}
+		return event.courts.find((court) => court && court.court_id === 'tdemo_5')
+			|| event.courts[0]
+			|| null;
+	}
+
+	function clone_display_preview_event(event) {
+		if (!event) {
+			return null;
+		}
+		if (typeof structuredClone === 'function') {
+			return structuredClone(event);
+		}
+		return JSON.parse(JSON.stringify(event));
+	}
+
+	function get_display_preview_real_netw(iframeWindow) {
+		try {
+			if (
+				iframeWindow &&
+				iframeWindow.network &&
+				typeof iframeWindow.network.get_real_netw === 'function'
+			) {
+				return iframeWindow.network.get_real_netw();
+			}
+		} catch (_err) {
+		}
+		return null;
+	}
+
+	function normalize_display_preview_match_data(match) {
+		if (!match || !match.setup || !Array.isArray(match.setup.teams)) {
+			return;
+		}
+		const fallbackTeams = [
+			{
+				name: 'TV Musterstadt',
+				players: [
+					{ name: 'Max Emil Mustermann', firstname: 'Max', middlename: 'Emil', lastname: 'Mustermann' },
+					{ name: 'Lena Beispiel', firstname: 'Lena', middlename: '', lastname: 'Beispiel' },
+				],
+			},
+			{
+				name: 'BC Beispielheim',
+				players: [
+					{ name: 'Timo Testfeld', firstname: 'Timo', middlename: '', lastname: 'Testfeld' },
+					{ name: 'Mia Sophie Demo', firstname: 'Mia', middlename: 'Sophie', lastname: 'Demo' },
+				],
+			},
+		];
+		match.setup.teams.forEach((team, teamIdx) => {
+			const fallbackTeam = fallbackTeams[teamIdx] || { name: '', players: [] };
+			team.name = fallbackTeam.name;
+			if (!Array.isArray(team.players)) {
+				team.players = [];
+			}
+			while (team.players.length < fallbackTeam.players.length) {
+				team.players.push({});
+			}
+			team.players.forEach((player, playerIdx) => {
+				const fallbackPlayer = fallbackTeam.players[playerIdx] || {};
+				if (!fallbackPlayer.name) {
+					return;
+				}
+				player.name = fallbackPlayer.name;
+				player.firstname = fallbackPlayer.firstname || '';
+				player.middlename = fallbackPlayer.middlename || '';
+				player.lastname = fallbackPlayer.lastname || '';
+			});
+		});
+	}
+
+	function normalize_display_preview_event_data(iframeWindow) {
+		const event = iframeWindow && iframeWindow.state && iframeWindow.state.event;
+		if (!event || !Array.isArray(event.matches)) {
+			return;
+		}
+		event.matches.forEach((match) => {
+			if (match && match.setup && match.setup.match_id === 'tdemo_match_42') {
+				normalize_display_preview_match_data(match);
+			}
+		});
+	}
+
+	function normalize_tablet_preview_match_data(match) {
+		normalize_display_preview_match_data(match);
+		if (match && match.setup) {
+			match.setup.umpire_name = 'Ulli Unparteiisch';
+		}
+	}
+
+	function normalize_tablet_preview_event_data(iframeWindow) {
+		const event = iframeWindow && iframeWindow.state && iframeWindow.state.event;
+		if (!event || !Array.isArray(event.matches)) {
+			return;
+		}
+		event.matches.forEach((match) => {
+			if (match && match.setup && match.setup.match_id === 'tdemo_match_42') {
+				normalize_tablet_preview_match_data(match);
+			}
+		});
+	}
+
+	function build_display_preview_full_score_sequence() {
+		return [
+			[1, 0],
+			[1, 1],
+			[2, 1],
+			[3, 1],
+			[3, 2],
+			[4, 2],
+			[5, 2],
+			[5, 3],
+			[6, 3],
+			[7, 3],
+			[8, 3],
+			[8, 4],
+			[9, 4],
+			[10, 4],
+			[11, 4],
+			[11, 5],
+			[12, 5],
+			[13, 5],
+			[13, 6],
+			[14, 6],
+			[15, 6],
+			[15, 7],
+			[16, 7],
+			[17, 7],
+			[17, 8],
+			[18, 8],
+			[18, 9],
+			[19, 9],
+			[20, 9],
+			[20, 10],
+			[21, 10],
+		];
+	}
+
+	function build_display_preview_presses(targetScore, options = {}) {
+		const sequence = build_display_preview_full_score_sequence();
+		const targetIndex = sequence.findIndex((score) => score[0] === targetScore[0] && score[1] === targetScore[1]);
+		const usedSequence = targetIndex >= 0 ? sequence.slice(0, targetIndex + 1) : sequence;
+		const nowTs = Date.now();
+		const fixedLastScoreTs = Number.isFinite(options.lastScoreTimestamp) ? options.lastScoreTimestamp : null;
+		const startTs = fixedLastScoreTs != null
+			? (fixedLastScoreTs - Math.max(usedSequence.length - 1, 0) * 1000 - 1000)
+			: (nowTs - (usedSequence.length + 10) * 1000);
+		const presses = [{
+			type: 'editmode_set-finished_games',
+			scores: [[21, 18]],
+			by_side: false,
+			timestamp: startTs,
+		}, {
+			type: 'pick_side',
+			team1_left: true,
+			timestamp: startTs + 100,
+		}, {
+			type: 'pick_server',
+			team_id: 0,
+			player_id: 0,
+			timestamp: startTs + 200,
+		}, {
+			type: 'pick_receiver',
+			team_id: 1,
+			player_id: 0,
+			timestamp: startTs + 300,
+		}, {
+			type: 'love-all',
+			timestamp: startTs + 400,
+		}];
+		let previousScore = [0, 0];
+		usedSequence.forEach((score, idx) => {
+			let side = 'left';
+			if (score[1] > previousScore[1]) {
+				side = 'right';
+			}
+			presses.push({
+				type: 'score',
+				side,
+				timestamp: startTs + 1000 + idx * 1000,
+			});
+			previousScore = score;
+		});
+		return presses;
+	}
+
+	function build_display_preview_network_state(match, targetScore, options = {}) {
+		const presses = build_display_preview_presses(targetScore, options);
+		const tempState = {
+			setup: match.setup,
+			metadata: {
+				id: match.setup.match_id || 'tdemo_match_42',
+				start: null,
+				end: null,
+				updated: Date.now(),
+			},
+		};
+		calc.init_state(tempState, null, presses, true);
+		calc.state(tempState);
+		return {
+			presses,
+			network_score: calc.netscore(tempState, true),
+			network_team1_serving: tempState.game.team1_serving,
+			network_teams_player1_even: tempState.game.teams_player1_even.slice(),
+			network_team0_left: tempState.game.team1_left,
+		};
+	}
+
+	function update_display_preview_match(previewState, options = {}) {
+		if (!previewState || !previewState.iframe || !previewState.iframe.contentWindow) {
+			return false;
+		}
+		const iframe = previewState.iframe;
+		const iframeWindow = iframe.contentWindow;
+		const nextEvent = clone_display_preview_event(iframeWindow.state && iframeWindow.state.event);
+		if (!nextEvent) {
+			return false;
+		}
+		const match = Array.isArray(nextEvent.matches)
+			? (nextEvent.matches.find((candidate) => candidate && candidate.setup && candidate.setup.match_id === 'tdemo_match_42') || nextEvent.matches[0] || null)
+			: null;
+		const court = Array.isArray(nextEvent.courts)
+			? (nextEvent.courts.find((candidate) => candidate && candidate.court_id === 'tdemo_5') || nextEvent.courts[0] || null)
+			: null;
+		if (!match || !match.setup || !court) {
+			return false;
+		}
+
+		const score = get_display_setting_preview_score(previewState, options);
+		let lastScoreTimestamp = null;
+		if (previewState.previewType === 'live' && Number.isFinite(previewState.livePhaseStartedAt)) {
+			if ((previewState.livePhaseIndex || 0) === 0) {
+				lastScoreTimestamp = previewState.livePhaseStartedAt - 1000;
+			} else if ((previewState.livePhaseIndex || 0) === 1) {
+				lastScoreTimestamp = previewState.livePhaseStartedAt;
+			} else {
+				lastScoreTimestamp = previewState.livePhaseStartedAt;
+			}
+		}
+		const networkState = build_display_preview_network_state(match, score, {
+			lastScoreTimestamp,
+		});
+		match.setup.court_id = 'tdemo_5';
+		match.presses = networkState.presses;
+		match.presses_json = JSON.stringify(networkState.presses);
+		match.network_score = networkState.network_score;
+		match.network_team1_serving = networkState.network_team1_serving;
+		match.network_teams_player1_even = networkState.network_teams_player1_even;
+		match.network_team0_left = networkState.network_team0_left;
+		court.match_id = match.setup.match_id;
+		iframeWindow.state.event = nextEvent;
+
+		const realNetw = get_display_preview_real_netw(iframeWindow);
+		if (realNetw && typeof realNetw.swap_event === 'function') {
+			try {
+				realNetw.swap_event(nextEvent);
+			} catch (_err) {
+			}
+		}
+
+		try {
+			if (
+				iframeWindow.displaymode &&
+				typeof iframeWindow.displaymode.on_style_change === 'function' &&
+				iframeWindow.state
+			) {
+				iframeWindow.displaymode.on_style_change(iframeWindow.state);
+			}
+		} catch (_err) {
+		}
+
+		return true;
+	}
+
+	function schedule_display_preview_match_resync(previewState) {
+		if (!previewState) {
+			return;
+		}
+		const delays = [80, 220, 500, 1000];
+		delays.forEach((delayMs) => {
+			window.setTimeout(() => {
+				update_display_preview_match(previewState, { advance: false });
+			}, delayMs);
+		});
+	}
+
+	function rewrite_display_preview_visible_names(previewState) {
+		const iframeWindow = previewState && previewState.iframe && previewState.iframe.contentWindow;
+		const iframeDocument = iframeWindow && iframeWindow.document;
+		if (!iframeDocument || !iframeDocument.body) {
+			return;
+		}
+		const showMiddleName = !!(previewState && previewState.lastEffectiveSettings && previewState.lastEffectiveSettings.d_show_middle_name);
+		const replacements = new Map([
+			['Stefan Frey', showMiddleName ? 'Max Emil Mustermann' : 'Max Mustermann'],
+			['Heidi Bender', 'Lena Beispiel'],
+			['Thomas Bunn', 'Timo Testfeld'],
+			['Heike Bunn', showMiddleName ? 'Mia Sophie Demo' : 'Mia Demo'],
+			['TV Refrath', 'TV Musterstadt'],
+			['BC Bischmisheim', 'BC Beispielheim'],
+		]);
+		const walker = iframeDocument.createTreeWalker(
+			iframeDocument.body,
+			NodeFilter.SHOW_TEXT,
+			{
+				acceptNode(node) {
+					const parentTag = node.parentElement && node.parentElement.tagName ? node.parentElement.tagName.toLowerCase() : '';
+					if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+					if (parentTag === 'script' || parentTag === 'style') return NodeFilter.FILTER_REJECT;
+					return NodeFilter.FILTER_ACCEPT;
+				},
+			}
+		);
+		const textNodes = [];
+		while (walker.nextNode()) {
+			textNodes.push(walker.currentNode);
+		}
+		textNodes.forEach((node) => {
+			let nextValue = node.nodeValue;
+			replacements.forEach((replacement, original) => {
+				if (nextValue && nextValue.includes(original)) {
+					nextValue = nextValue.split(original).join(replacement);
+				}
+			});
+			if (nextValue !== node.nodeValue) {
+				node.nodeValue = nextValue;
+			}
+		});
+	}
+
+	function ensure_display_preview_name_guard(previewState) {
+		const iframeWindow = previewState && previewState.iframe && previewState.iframe.contentWindow;
+		const iframeDocument = iframeWindow && iframeWindow.document;
+		if (!previewState || !iframeDocument || !iframeDocument.body || previewState.nameGuardObserver) {
+			return;
+		}
+		let pending = false;
+		const runRewrite = () => {
+			pending = false;
+			rewrite_display_preview_visible_names(previewState);
+		};
+		const scheduleRewrite = () => {
+			if (pending) {
+				return;
+			}
+			pending = true;
+			if (typeof iframeWindow.requestAnimationFrame === 'function') {
+				iframeWindow.requestAnimationFrame(runRewrite);
+			} else {
+				iframeWindow.setTimeout(runRewrite, 0);
+			}
+		};
+		previewState.nameGuardObserver = new iframeWindow.MutationObserver(() => {
+			scheduleRewrite();
+		});
+		previewState.nameGuardObserver.observe(iframeDocument.body, {
+			subtree: true,
+			childList: true,
+			characterData: true,
+		});
+		scheduleRewrite();
+	}
+
+	function apply_display_preview_settings(iframe, previewSettings, previewType) {
+		if (!iframe || !iframe.contentWindow) {
+			return false;
+		}
+		const iframeWindow = iframe.contentWindow;
+		const iframeDocument = iframeWindow.document;
+		if (!iframeDocument || iframeDocument.readyState !== 'complete') {
+			return false;
+		}
+
+		const effectiveSettings = build_display_preview_bup_settings(previewSettings);
+		if (iframe._previewState) {
+			iframe._previewState.lastEffectiveSettings = effectiveSettings;
+		}
+		try {
+			iframeWindow.localStorage.setItem('bup_settings', JSON.stringify(effectiveSettings));
+		} catch (_err) {
+		}
+
+		ensure_display_preview_visible(iframeWindow);
+
+		[
+			['displaymode_style', effectiveSettings.displaymode_style],
+			['displaymode_court_id', effectiveSettings.displaymode_court_id],
+			['fullscreen_ask', effectiveSettings.fullscreen_ask],
+			['language', effectiveSettings.language],
+			['neversettings', effectiveSettings.neversettings],
+			['d_show_pause', effectiveSettings.d_show_pause],
+			['d_show_court_number', effectiveSettings.d_show_court_number],
+			['d_show_competition', effectiveSettings.d_show_competition],
+			['d_show_round', effectiveSettings.d_show_round],
+			['d_show_middle_name', effectiveSettings.d_show_middle_name],
+			['d_show_doubles_receiving', effectiveSettings.d_show_doubles_receiving],
+			['d_team_colors', effectiveSettings.d_team_colors],
+			['displaymode_reverse_order', effectiveSettings.displaymode_reverse_order],
+			['d_c0', effectiveSettings.d_c0],
+			['d_c1', effectiveSettings.d_c1],
+			['d_cb0', effectiveSettings.d_cb0],
+			['d_cb1', effectiveSettings.d_cb1],
+			['d_cbg', effectiveSettings.d_cbg],
+			['d_cbg2', effectiveSettings.d_cbg2],
+			['d_cbg3', effectiveSettings.d_cbg3],
+			['d_cbg4', effectiveSettings.d_cbg4],
+			['d_cfg', effectiveSettings.d_cfg],
+			['d_cfg2', effectiveSettings.d_cfg2],
+			['d_cfg3', effectiveSettings.d_cfg3],
+			['d_cfg4', effectiveSettings.d_cfg4],
+			['d_cfgdark', effectiveSettings.d_cfgdark],
+			['d_cexp', effectiveSettings.d_cexp],
+			['d_ct', effectiveSettings.d_ct],
+			['d_cborder', effectiveSettings.d_cborder],
+			['d_cserv', effectiveSettings.d_cserv],
+			['d_cserv2', effectiveSettings.d_cserv2],
+			['d_crecv', effectiveSettings.d_crecv],
+			['d_ctim_blue', effectiveSettings.d_ctim_blue],
+			['d_ctim_active', effectiveSettings.d_ctim_active],
+		].forEach(([name, value]) => set_preview_iframe_field(iframeDocument, name, value));
+
+		try {
+			if (
+				iframeWindow.state &&
+				iframeWindow.settings &&
+				typeof iframeWindow.settings.change_all === 'function'
+			) {
+				iframeWindow.settings.change_all(iframeWindow.state, effectiveSettings);
+				if (typeof iframeWindow.settings.on_mode_change === 'function') {
+					iframeWindow.settings.on_mode_change(iframeWindow.state);
+				}
+			}
+			if (
+				iframeWindow.displaymode &&
+				typeof iframeWindow.displaymode.on_style_change === 'function' &&
+				iframeWindow.state
+			) {
+				iframeWindow.displaymode.on_style_change(iframeWindow.state);
+			}
+		} catch (_err) {
+		}
+
+		try {
+			if (
+				iframeWindow.displaymode &&
+				typeof iframeWindow.displaymode.hide === 'function' &&
+				typeof iframeWindow.displaymode.show === 'function'
+			) {
+				iframeWindow.displaymode.hide();
+				iframeWindow.displaymode.show();
+			}
+		} catch (_err) {
+		}
+
+		try {
+			iframeWindow.dispatchEvent(new Event('resize'));
+		} catch (_err) {
+		}
+
+		const previewState = iframe._previewState || {
+			iframe,
+			previewType,
+			sequenceIndex: 0,
+		};
+		if (!previewState.sceneInitialized) {
+			const updated = update_display_preview_match(previewState, { advance: false });
+			if (updated) {
+				previewState.sceneInitialized = true;
+			}
+			return updated;
+		}
+		return true;
+	}
+
+	function schedule_display_preview_refresh(existingState, previewSettings, options = {}) {
+		if (!existingState || !existingState.iframe) {
+			return;
+		}
+		if (existingState.refreshTimerId) {
+			window.clearTimeout(existingState.refreshTimerId);
+			existingState.refreshTimerId = null;
+		}
+		existingState.refreshAttempt = options.reset ? 0 : (existingState.refreshAttempt || 0);
+
+		const tryApply = () => {
+			if (!existingState || !existingState.iframe) {
+				return;
+			}
+			const applied = apply_display_preview_settings(
+				existingState.iframe,
+				previewSettings,
+				existingState.previewType
+			);
+			if (applied) {
+				existingState.refreshTimerId = null;
+				existingState.refreshAttempt = 0;
+				ensure_display_preview_animation(existingState);
+				return;
+			}
+			existingState.refreshAttempt = (existingState.refreshAttempt || 0) + 1;
+			if (existingState.refreshAttempt >= 40) {
+				existingState.refreshTimerId = null;
+				return;
+			}
+			existingState.refreshTimerId = window.setTimeout(tryApply, 150);
+		};
+
+		tryApply();
+	}
+
+	function ensure_display_preview_animation(existingState) {
+		if (!existingState || existingState.timerIntervalId) {
+			return;
+		}
+		const scheduleNextTick = () => {
+			if (!existingState) {
+				return;
+			}
+			existingState.timerIntervalId = window.setTimeout(() => {
+				existingState.timerIntervalId = null;
+				update_display_preview_match(existingState, { advance: true });
+				scheduleNextTick();
+			}, get_display_preview_next_update_delay(existingState));
+		};
+		scheduleNextTick();
+	}
+
+	function ensure_display_preview_sync(existingState) {
+		if (!existingState || existingState.syncIntervalId) {
+			return;
+		}
+		existingState.syncIntervalId = window.setInterval(() => {
+			update_display_preview_match(existingState, { advance: false });
+		}, 500);
+	}
+
+	function ensure_display_preview_iframe(previewBody, previewSettings, previewType) {
+		const existing = previewBody._displayPreviewState;
+		if (existing && existing.iframe && existing.previewType === previewType) {
+			schedule_display_preview_refresh(existing, previewSettings, { reset: true });
+			return true;
+		}
+
+		if (previewBody._tabletPreviewState) {
+			clear_preview_runtime_state(previewBody);
+		}
+
+		if (existing && existing.timerIntervalId) {
+			window.clearTimeout(existing.timerIntervalId);
+		}
+		if (existing && existing.syncIntervalId) {
+			window.clearInterval(existing.syncIntervalId);
+		}
+
+		uiu.empty(previewBody);
+		const outer = uiu.el(previewBody, 'div', {
+			class: 'bup_preview_outer',
+			style: 'width:100%;',
+		});
+		const previews = uiu.el(outer, 'div', {
+			class: 'bup_preview_panels',
+			style: 'display:flex;flex-direction:column;gap:1rem;',
+		});
+		const panel = uiu.el(previews, 'div', {
+			class: previewType === 'live' ? 'bup_preview_panel_live' : 'bup_preview_panel_primary',
+		});
+		const frame = uiu.el(panel, 'div', {
+			style: [
+				'position:relative',
+				'width:100%',
+				'padding:0.85rem',
+				'border-radius:22px',
+				'background:#0f0f10',
+				'box-shadow:0 14px 30px rgba(0,0,0,0.18)',
+			].join(';'),
+		});
+		const viewport = uiu.el(frame, 'div', {
+			class: 'bup_preview_viewport',
+			style: [
+				'position:relative',
+				'background:#111',
+				'border-radius:18px',
+				'overflow:hidden',
+				'aspect-ratio:16 / 9',
+				'width:100%',
+			].join(';'),
+		});
+		const iframe = uiu.el(viewport, 'iframe', {
+			class: 'bup_preview_frame',
+			src: previewType === 'primary'
+				? `${window.location.origin}/bup/#btspreview_primary&lang=de`
+				: `${window.location.origin}/bup/#btspreview_live&lang=de`,
+			title: 'BUP Display Vorschau',
+			tabindex: '-1',
+		});
+		iframe.style.position = 'absolute';
+		iframe.style.inset = '0';
+		iframe.style.width = '100%';
+		iframe.style.height = '100%';
+		iframe.style.border = '0';
+		iframe.style.display = 'block';
+		iframe.style.pointerEvents = 'none';
+		iframe.style.background = '#111';
+
+		previewBody._displayPreviewState = {
+			previewType,
+			iframe,
+			timerIntervalId: null,
+			syncIntervalId: null,
+			nameGuardObserver: null,
+			refreshTimerId: null,
+			refreshAttempt: 0,
+			sequenceIndex: 0,
+			sceneInitialized: false,
+			primaryStepStartedAt: null,
+			livePhaseIndex: 0,
+			livePhaseStartedAt: null,
+		};
+		iframe._previewState = previewBody._displayPreviewState;
+
+		iframe.addEventListener('load', () => {
+			window.setTimeout(() => {
+				schedule_display_preview_refresh(previewBody._displayPreviewState, previewSettings, { reset: true });
+			}, 150);
+		});
+
+		const previewLabel = previewType === 'primary'
+			? 'Vorschau: 2. Satz von 12:5 -> 21:10'
+			: 'Vorschau: Pause im 2. Satz';
+		uiu.el(previews, 'div', {
+			style: 'font-size:0.92rem;color:#555;text-align:center;margin-top:-0.15rem;',
+		}, previewLabel);
+
+		return true;
 	}
 
 	function render_display_mode_preview(target, settings, previewType = 'primary') {
@@ -4661,18 +5393,18 @@ var ctournament = (function() {
 				team_competition: false,
 				match_name: 'Finale',
 				event_name: 'MX O55 (Demo)',
-				umpire_name: 'Rita Richter',
+				umpire_name: 'Ulli Unparteiisch',
 				teams: [
 					{
 						players: [
-							{ name: 'Stefan Frey' },
-							{ name: 'Heidi Bender' },
+							{ name: 'Max Emil Mustermann', firstname: 'Max', middlename: 'Emil', lastname: 'Mustermann' },
+							{ name: 'Lena Beispiel' },
 						],
 					},
 					{
 						players: [
-							{ name: 'Thomas Bunn' },
-							{ name: 'Heike Bunn' },
+							{ name: 'Timo Testfeld' },
+							{ name: 'Mia Sophie Demo', firstname: 'Mia', middlename: 'Sophie', lastname: 'Demo' },
 						],
 					},
 				],
@@ -4720,6 +5452,7 @@ var ctournament = (function() {
 			return false;
 		}
 		const iframeWindow = iframe.contentWindow;
+		normalize_tablet_preview_event_data(iframeWindow);
 		const nowTs = Date.now();
 		const demoState = create_tablet_preview_demo_state(nowTs, options);
 		try {
@@ -4790,6 +5523,29 @@ var ctournament = (function() {
 		}, 1000);
 	}
 
+	function clear_preview_runtime_state(previewBody) {
+		if (!previewBody) {
+			return;
+		}
+		if (previewBody._tabletPreviewState && previewBody._tabletPreviewState.timerIntervalId) {
+			window.clearInterval(previewBody._tabletPreviewState.timerIntervalId);
+		}
+		if (previewBody._displayPreviewState && previewBody._displayPreviewState.timerIntervalId) {
+			window.clearTimeout(previewBody._displayPreviewState.timerIntervalId);
+		}
+		if (previewBody._displayPreviewState && previewBody._displayPreviewState.syncIntervalId) {
+			window.clearInterval(previewBody._displayPreviewState.syncIntervalId);
+		}
+		if (previewBody._displayPreviewState && previewBody._displayPreviewState.nameGuardObserver) {
+			previewBody._displayPreviewState.nameGuardObserver.disconnect();
+		}
+		if (previewBody._displayPreviewState && previewBody._displayPreviewState.refreshTimerId) {
+			window.clearTimeout(previewBody._displayPreviewState.refreshTimerId);
+		}
+		previewBody._tabletPreviewState = null;
+		previewBody._displayPreviewState = null;
+	}
+
 	function build_tablet_preview_bup_settings(previewSettings, previewType) {
 		return Object.assign({}, previewSettings, {
 			court_id: previewType === 'live' ? 'tdemo_5' : 'referee',
@@ -4846,9 +5602,9 @@ var ctournament = (function() {
 		}
 
 		const effectiveSettings = build_tablet_preview_bup_settings(previewSettings, previewType);
-		const nowTs = Date.now();
 		try {
 			iframeWindow.localStorage.setItem('bup_settings', JSON.stringify(effectiveSettings));
+			normalize_tablet_preview_event_data(iframeWindow);
 			if (previewType === 'live') {
 				if (iframe._previewState && iframe._previewState.previewType === 'live') {
 					sync_live_tablet_preview_cycle(iframe._previewState);
@@ -4857,10 +5613,6 @@ var ctournament = (function() {
 						score: [10, 8],
 					});
 				}
-			} else {
-				update_live_tablet_preview_match(iframe, {
-					score: [10, 8],
-				});
 			}
 		} catch (_err) {
 		}
@@ -4913,6 +5665,10 @@ var ctournament = (function() {
 		} catch (_err) {
 		}
 
+		if ((previewType === 'live') && iframe._previewState) {
+			schedule_display_preview_match_resync(iframe._previewState);
+		}
+
 		return true;
 	}
 
@@ -4924,6 +5680,10 @@ var ctournament = (function() {
 				return true;
 			}
 			return true;
+		}
+
+		if (previewBody._displayPreviewState) {
+			clear_preview_runtime_state(previewBody);
 		}
 
 		if (existing && existing.timerIntervalId) {
@@ -5010,45 +5770,7 @@ var ctournament = (function() {
 			ensure_tablet_preview_iframe(previewBody, previewSettings, previewType);
 			return;
 		}
-
-		uiu.empty(previewBody);
-		const outer = uiu.el(previewBody, 'div', {
-			class: 'bup_preview_outer',
-			style: 'width:100%;',
-		});
-		const previews = uiu.el(outer, 'div', {
-			class: 'bup_preview_panels',
-			style: 'display:flex;flex-direction:column;gap:1rem;',
-		});
-		const panel = uiu.el(previews, 'div', {
-			class: previewType === 'live' ? 'bup_preview_panel_live' : 'bup_preview_panel_primary',
-		});
-		const frame = uiu.el(panel, 'div', {
-			style: [
-				'position:relative',
-				`padding:${previewSettings.devicemode === 'umpire' ? '0.45rem' : '0.85rem'}`,
-				`border-radius:${previewSettings.devicemode === 'umpire' ? '16px' : '22px'}`,
-				'background:#0f0f10',
-				'box-shadow:0 14px 30px rgba(0,0,0,0.18)',
-			].join(';'),
-		});
-		const viewport = uiu.el(frame, 'div', {
-			class: 'bup_preview_viewport',
-			style: [
-				'position:relative',
-				`background:${previewSettings.devicemode === 'umpire' ? '#111' : '#111'}`,
-				`border-radius:${previewSettings.devicemode === 'umpire' ? '12px' : '18px'}`,
-				'overflow:hidden',
-				'aspect-ratio:16 / 9',
-				'width:100%',
-			].join(';'),
-		});
-		if (previewSettings.devicemode === 'umpire') {
-			render_umpire_mode_preview(viewport, previewSettings, previewType);
-		}
-		else {
-			render_display_mode_preview(viewport, previewSettings, previewType);
-		}
+		ensure_display_preview_iframe(previewBody, previewSettings, previewType);
 	}
 
 	function render_edit_display_setting(form, display_setting) {
@@ -5234,13 +5956,6 @@ var ctournament = (function() {
 				window.clearInterval(previewAnimationTimer);
 				previewAnimationTimer = null;
 			}
-			previewAnimationTimer = window.setInterval(() => {
-				const currentMode = getCurrentDeviceMode();
-				if (currentMode !== 'display') {
-					return;
-				}
-				render_display_setting_preview(primaryLayout.previewBody, form, 'primary');
-			}, 1000);
 		};
 		
 		displaystyle_select.addEventListener('change', (e) => {
@@ -5293,7 +6008,11 @@ var ctournament = (function() {
 		render_select_color(select_color_label, 'ctim_active', calculated_style, display_setting.d_ctim_active);
 		uiu.visible(select_color_div, calculated_style !== 'umpire');
 		render_drop_down(primaryLayout.settingsColumn, ci18n('display_setting:language'), 'language', true, SHORT_BUP_LANGUAGES, display_setting.language, ALL_BUP_LANGUAGES);
-		render_drop_down(primaryLayout.settingsColumn, ci18n('display_setting:fullscreen_ask'), 'fullscreen_ask', true, ALL_ASK_FULLSCREAN_MODES, display_setting.fullscreen_ask || '');
+		uiu.el(form, 'input', {
+			type: 'hidden',
+			name: 'fullscreen_ask',
+			value: 'never',
+		});
 		render_drop_down(primaryLayout.settingsColumn, ci18n('display_setting:settings_style'), 'style', calculated_style, ALL_STYLE_MODES, display_setting.style || '');
 		render_check_box(primaryLayout.settingsColumn, ci18n('display_setting:neversettings'), 'neversettings', true, display_setting.neversettings);
 
@@ -5445,7 +6164,7 @@ var ctournament = (function() {
 			d_ctim_active: d.ctim_active || '#ffc000',
 			d_team_colors: d.team_colors == 'on' ? true : false,
 			d_scale: d.scale || '100',
-			fullscreen_ask: d.fullscreen_ask || 'auto',
+			fullscreen_ask: 'never',
 			show_announcements: d.show_announcements || 'all', 
 			neversettings: d.neversettings == 'on' ? true : false,
 			button_block_timeout: d.button_block_timeout || '100',
