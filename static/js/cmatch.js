@@ -249,6 +249,9 @@ function render_match_row(tr, match, court, style, show_player_status, show_add_
 	}
 
 	court = resolve_match_court(match, court);
+	if (style === 'unasigned') {
+		court = null;
+	}
 
 	const completeMatch = (match.setup.teams[0].players.length >= 1 && match.setup.teams[1].players.length >= 1);
 

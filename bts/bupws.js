@@ -531,20 +531,33 @@ function create_display_court_displaysettings(client_id, hostname, court_id, dis
 
 async function handle_init(app, ws, msg) {
 	const tournament_key = msg.tournament_key;
-	var court_id = msg.panel_settings.court_id;
+	var court_id = undefined;
 	ws.panel_devicemode = normalize_panel_devicemode(msg.panel_settings && msg.panel_settings.devicemode);
-	if (court_id) {
-		ws.court_id = court_id;
-	} else {
-		ws.court_id = undefined;
-		court_id = undefined;
-	}
+	ws.court_id = undefined;
 	if (msg.initialize_display) {
 		await initialize_client(ws, app, tournament_key, court_id, undefined, ws.panel_devicemode);
 	} else { 
 		matches_handler(app, ws, tournament_key, ws.court_id);
 	}
 	await notify_admin_display_status_changed(app, ws, true);
+	send_courts(app, ws, tournament_key);
+}
+
+async function async_handle_select_court_assignment(app, ws, msg) {
+	const tournament_key = msg.tournament_key || ws.last_tournament_key || default_tournament_key;
+	const court_id = msg.court_id;
+	if (!court_id || court_id === 'referee') {
+		return;
+	}
+
+	const court = await app.db.courts.findOne_async({ tournament_key, _id: court_id });
+	if (!court) {
+		send_error(ws, tournament_key, 'Unknown court ' + court_id);
+		return;
+	}
+
+	const client_id = determine_client_id(ws);
+	await restart_panel(app, tournament_key, client_id, court_id);
 	send_courts(app, ws, tournament_key);
 }
 
@@ -826,6 +839,9 @@ async function get_display_setting(app, tkey, client_id, court_id, displaysettin
 		returnvalue = effective_displaysetting;
 		returnvalue.court_id = display_court_displaysetting ? display_court_displaysetting.court_id : court_id;
 		returnvalue.displaymode_court_id = returnvalue.court_id;
+		returnvalue.client_id = display_court_displaysetting ? display_court_displaysetting.client_id : client_id;
+		returnvalue.hostname = display_court_displaysetting ? display_court_displaysetting.hostname : hostname;
+		returnvalue.monitor_label = String(returnvalue.client_id || '');
 	}
 	const advertisements = await app.db.advertisements.find_async({});
 	if (returnvalue) {
@@ -1208,6 +1224,7 @@ module.exports = {
 	on_connect,
 	notify_change,
 	handle_init,
+	async_handle_select_court_assignment,
 	handle_command_done,
 	handle_score_change,
 	handle_persist_display_settings,
