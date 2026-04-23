@@ -5552,6 +5552,7 @@ var ctournament = (function() {
 			court_description: '',
 			language: previewSettings.language || 'de',
 			style: previewSettings.style || 'default',
+			tablet_mode: previewSettings.tablet_mode || 'umpire',
 			neversettings: false,
 		});
 	}
@@ -5621,6 +5622,7 @@ var ctournament = (function() {
 			['language', effectiveSettings.language],
 			['fullscreen_ask', effectiveSettings.fullscreen_ask],
 			['style', effectiveSettings.style],
+			['tablet_mode', effectiveSettings.tablet_mode],
 			['neversettings', effectiveSettings.neversettings],
 			['negative_timers', effectiveSettings.negative_timers],
 			['shuttle_counter', effectiveSettings.shuttle_counter],
@@ -5634,6 +5636,7 @@ var ctournament = (function() {
 			language: effectiveSettings.language,
 			fullscreen_ask: effectiveSettings.fullscreen_ask,
 			style: effectiveSettings.style,
+			tablet_mode: effectiveSettings.tablet_mode,
 			neversettings: effectiveSettings.neversettings,
 			negative_timers: effectiveSettings.negative_timers,
 			shuttle_counter: effectiveSettings.shuttle_counter,
@@ -5880,6 +5883,14 @@ var ctournament = (function() {
 			'touchstart',
 			'touchend',
 		];
+		const ALL_TABLET_MODES = [
+			'umpire',
+			'scorecard',
+		];
+		const ALL_TABLET_MODE_LABELS = [
+			ci18n('display_setting:tablet_mode:umpire'),
+			ci18n('display_setting:tablet_mode:scorecard'),
+		];
 		const ALL_STYLE_MODES = [
 			'default',
 			'complete',
@@ -6025,6 +6036,19 @@ var ctournament = (function() {
 		// 	}
 		// }
 
+		const tablet_mode_select = render_drop_down(
+			secondaryLayout.settingsColumn,
+			ci18n('display_setting:tablet_mode'),
+			'tablet_mode',
+			true,
+			ALL_TABLET_MODES,
+			display_setting.tablet_mode || 'umpire',
+			ALL_TABLET_MODE_LABELS
+		);
+		tablet_mode_select.addEventListener('change', () => {
+			update_edit_display_setting(get_display_setting_form_style(form));
+			scheduleDisplaySettingPreviewRender(80, true);
+		});
 		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:show_pause'), 'show_pause', calculated_style, display_setting.d_show_pause);
 		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:show_court_number'), 'show_court_number', calculated_style, display_setting.d_show_court_number);
 		render_check_box(secondaryLayout.settingsColumn, ci18n('display_setting:show_competition'), 'show_competition', calculated_style, display_setting.d_show_competition);
@@ -6172,6 +6196,7 @@ var ctournament = (function() {
 			shuttle_counter: d.shuttle_counter == 'on' ? true : false,
 			editmode_doubleclick: d.editmode_doubleclick == 'on' ? true : false,
 			click_mode: d.click_mode || 'auto',
+			tablet_mode: d.tablet_mode || 'umpire',
 			style: d.style || 'complete',
 			network_timeout: d.network_timeout || '10000',
 			network_update_interval: d.network_update_interval || '10000',
@@ -6189,10 +6214,19 @@ var ctournament = (function() {
 		const devicemodeInput = form ? form.querySelector('[name="devicemode"]') : null;
 		const currentDeviceMode = devicemodeInput ? (devicemodeInput.value || '') : 'display';
 		const isDisplayMode = currentDeviceMode !== 'umpire';
+		const tabletModeInput = form ? form.querySelector('[name="tablet_mode"]') : null;
+		const currentTabletMode = tabletModeInput ? (tabletModeInput.value || 'umpire') : 'umpire';
+		const isScorecardTabletMode = currentTabletMode === 'scorecard';
+		const umpirePanelOnlyTabletFields = {
+			show_announcements: true,
+			negative_timers: true,
+			shuttle_counter: true,
+			editmode_doubleclick: true,
+		};
 		const names = [ 'displaymode_style', 'displaymode_reverse_order', 'show_pause', 'show_court_number', 'show_competition', 'show_round', 'show_middle_name', 'show_doubles_receiving', 
 						'c0', 'c1', 'cb0', 'cb1', 'cbg', 'cbg2', 'cbg3', 'cbg4', 'cfg', 'cfg2', 'cfg3', 'cfg4', 'cfgdark', 'cexp', 'ct', 
 						'cborder', 'cserv', 'cserv2', 'crecv', 'ctim_blue', 'ctim_active', 'team_colors', 'scale',
-						'show_announcements', 'neversettings', 'button_block_timeout', 'negative_timers', 'shuttle_counter', 'editmode_doubleclick', 
+						'tablet_mode', 'show_announcements', 'neversettings', 'button_block_timeout', 'negative_timers', 'shuttle_counter', 'editmode_doubleclick', 
 						'click_mode', 'style', 'language'];
 		
 		names.forEach((field_name) => {
@@ -6205,6 +6239,10 @@ var ctournament = (function() {
 				isVisible = isDisplayMode;
 			} else if (field_name === 'displaymode_reverse_order') {
 				isVisible = isDisplayMode && displaymode.option_applies(displaystyle, 'reverse_order');
+			} else if (field_name === 'tablet_mode') {
+				isVisible = !isDisplayMode;
+			} else if (umpirePanelOnlyTabletFields[field_name]) {
+				isVisible = !isDisplayMode && !isScorecardTabletMode;
 			}
 			uiu.visible(update, isVisible);
 		});

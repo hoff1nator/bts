@@ -730,7 +730,23 @@ function persist_client_court_displaysetting(app, client_court_displaysetting) {
 
 function update_client_court_displaysetting(app, client_court_displaysetting_id, updatevalues) {
 	return new Promise((resolve, reject) => {
-		app.db.display_court_displaysettings.update({ client_id: client_court_displaysetting_id }, { $set: updatevalues }, { returnUpdatedDocs: true }, function (err, numAffected, changed_objects) {
+		const setvalues = {};
+		const unsetvalues = {};
+		Object.keys(updatevalues || {}).forEach((key) => {
+			if (updatevalues[key] === undefined) {
+				unsetvalues[key] = true;
+			} else {
+				setvalues[key] = updatevalues[key];
+			}
+		});
+		const modifier = {};
+		if (Object.keys(setvalues).length > 0) {
+			modifier.$set = setvalues;
+		}
+		if (Object.keys(unsetvalues).length > 0) {
+			modifier.$unset = unsetvalues;
+		}
+		app.db.display_court_displaysettings.update({ client_id: client_court_displaysetting_id }, modifier, { returnUpdatedDocs: true }, function (err, numAffected, changed_objects) {
 			if (err) {
 				reject(err)
 			}
@@ -837,7 +853,11 @@ async function get_display_setting(app, tkey, client_id, court_id, displaysettin
 	const effective_displaysetting = await app.db.displaysettings.findOne_async({ id: effective_displaysetting_id });
 	if (effective_displaysetting) {
 		returnvalue = effective_displaysetting;
-		returnvalue.court_id = display_court_displaysetting ? display_court_displaysetting.court_id : court_id;
+		returnvalue.court_id = (
+			display_court_displaysetting && display_court_displaysetting.court_id != null
+				? display_court_displaysetting.court_id
+				: ''
+		);
 		returnvalue.displaymode_court_id = returnvalue.court_id;
 		returnvalue.client_id = display_court_displaysetting ? display_court_displaysetting.client_id : client_id;
 		returnvalue.hostname = display_court_displaysetting ? display_court_displaysetting.hostname : hostname;
@@ -1109,17 +1129,18 @@ function create_event_representation(tournament) {
 
 async function restart_panel(app, tournament_key, client_id, new_court_id) {
 	var client_court_displaysetting = null;
-	if (new_court_id) {
-		if (new_court_id == "--") {
-			new_court_id = undefined;
-		}
+	const should_update_court = arguments.length >= 4;
+	if (new_court_id == "--") {
+		new_court_id = undefined;
+	}
 
+	if (should_update_court) {
 		const updatevalues = {
 			court_id: new_court_id
 		}
 		client_court_displaysetting = await update_client_court_displaysetting(app, client_id, updatevalues);
 	}
-	var display_online = reinitialize_panel(app, tournament_key, client_id, new_court_id, undefined);
+	var display_online = reinitialize_panel(app, tournament_key, client_id, new_court_id, undefined, should_update_court);
 	if (client_court_displaysetting != null) { 
 		client_court_displaysetting.online = display_online;
 		admin.notify_change(app, tournament_key, 'display_status_changed', { 'display_court_displaysetting': client_court_displaysetting });
@@ -1165,11 +1186,11 @@ async function change_default_display_mode(app, tournament, old_displaysettings_
 
 
 
-function reinitialize_panel(app, tournament_key, client_id, new_court_id, displaysetting_id) {
+function reinitialize_panel(app, tournament_key, client_id, new_court_id, displaysetting_id, apply_court_id = false) {
 	for (const panel_ws of all_panels) {
 		const ws_client_id = determine_client_id(panel_ws);
 		if (client_id == ws_client_id) {
-			if (new_court_id != null) {
+			if (apply_court_id) {
 				panel_ws.court_id = new_court_id;
 			}
 			initialize_client(panel_ws, app, tournament_key, panel_ws.court_id, displaysetting_id, panel_ws.panel_devicemode);
