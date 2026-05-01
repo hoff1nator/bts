@@ -152,35 +152,30 @@
 	border-bottom: 2px solid rgba(139, 199, 232, 0.85);
 }
 
-.match_table > tbody > tr.preparation_call_cutoff > td.call_td {
+.match_table > tbody > tr.preparation_call_cutoff > td.match_timer {
 	position: relative;
-	border-bottom: none;
-	border-bottom-right-radius: 10px;
-	background-clip: padding-box;
-	overflow: hidden;
+	overflow: visible;
+	z-index: 2;
 }
 
-.match_table > tbody > tr.preparation_call_cutoff > td.call_td::before {
-	content: '';
-	position: absolute;
-	left: 0;
-	right: 10px;
-	top: 0;
-	bottom: 0;
-	box-shadow: inset 0 -2px 0 rgba(139, 199, 232, 0.85);
-	pointer-events: none;
-}
-
-.match_table > tbody > tr.preparation_call_cutoff > td.call_td::after {
+.match_table > tbody > tr.preparation_call_cutoff > td.match_timer::after {
 	content: 'Aufrufgrenze';
 	position: absolute;
-	right: 0.35rem;
-	bottom: -0.9rem;
-	padding: 0 0.35rem;
-	font-size: 0.78rem;
-	line-height: 1.1;
+	left: 50%;
+	bottom: -2px;
+	transform: translate(-50%, 50%);
+	z-index: 3;
+	padding: 0.08rem 0.45rem 0.1rem;
+	font-size: 0.72rem;
+	font-weight: 700;
+	line-height: 1;
+	white-space: nowrap;
 	color: #4f7390;
-	background: #f2f8fc;
+	background: rgba(247, 252, 255, 0.96);
+	border: 1px solid rgba(139, 199, 232, 0.85);
+	border-radius: 999px;
+	box-shadow: 0 1px 4px rgba(79, 115, 144, 0.22);
+	pointer-events: none;
 }
 
 .match_table > tbody > tr > td.inactive {

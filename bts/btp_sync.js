@@ -20,6 +20,9 @@ function resolve_current_now_ms(current_now_ms) {
 }
 
 function _is_pause_debug_player(player) {
+	if (process.env.BTP_PAUSE_DEBUG !== '1') {
+		return false;
+	}
 	if (!player) {
 		return false;
 	}

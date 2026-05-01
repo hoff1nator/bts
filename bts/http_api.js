@@ -11,7 +11,7 @@ const DISPLAY_PREVIEW_SETUP = Object.freeze({
 	match_num: 42,
 	counting: '3x21',
 	match_name: 'Finale',
-	event_name: 'MX O55 (Demo)',
+	event_name: 'MX O55',
 	umpire_name: 'Ulli Unparteiisch',
 	service_judge_name: '',
 	court_id: 'tdemo_5',
@@ -21,15 +21,15 @@ const DISPLAY_PREVIEW_SETUP = Object.freeze({
 		{
 			name: 'TV Musterstadt',
 			players: [
-				{ name: 'Max Emil Mustermann', firstname: 'Max', middlename: 'Emil', lastname: 'Mustermann' },
-				{ name: 'Lena Beispiel', firstname: 'Lena', middlename: '', lastname: 'Beispiel' },
+				{ name: 'Max Emil Mustermann', firstname: 'Max', middlename: 'Emil', lastname: 'Mustermann', nationality: 'GER' },
+				{ name: 'Lena Beispiel', firstname: 'Lena', middlename: '', lastname: 'Beispiel', nationality: 'GER' },
 			],
 		},
 		{
 			name: 'BC Beispielheim',
 			players: [
-				{ name: 'Timo Testfeld', firstname: 'Timo', middlename: '', lastname: 'Testfeld' },
-				{ name: 'Mia Sophie Demo', firstname: 'Mia', middlename: 'Sophie', lastname: 'Demo' },
+				{ name: 'Timo Testfeld', firstname: 'Timo', middlename: '', lastname: 'Testfeld', nationality: 'GER' },
+				{ name: 'Mia Sophie Demo', firstname: 'Mia', middlename: 'Sophie', lastname: 'Demo', nationality: 'GER' },
 			],
 		},
 	],

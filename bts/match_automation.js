@@ -1191,22 +1191,16 @@ function is_match_eligible_for_preparation(match, location_id, tournament, optio
 }
 
 function passes_display_preparation_base_rule(match, location_id, tournament, options = {}) {
-	const setup = match?.setup || {};
 	const courts_by_id = options.courts_by_id || get_courts_by_id(tournament);
 	const matches_by_planning_id = options.matches_by_planning_id || build_matches_by_planning_id(tournament);
 	const now_ts = resolve_now_ts(options);
 
-	if (setup.is_match !== true) return false;
-	if (setup.state !== 'scheduled') return false;
-	if (!match_matches_location(match, location_id, courts_by_id)) return false;
-	if (setup.now_on_court === true) return false;
-	if (setup.state === 'preparation' || setup.state === 'oncourt' || setup.state === 'blocked' || setup.state === 'finished') return false;
-	if (match?.team1_won !== undefined && match?.team1_won !== null) return false;
-	if (!is_match_completely_initialized(match)) return false;
-	if (has_open_participant_dependency(match, tournament, { matches_by_planning_id })) return false;
-	if (!passes_time_limit_before_scheduled(match, tournament, now_ts)) return false;
-
-	return true;
+	return passes_base_preparation_rules(match, location_id, tournament, {
+		...options,
+		courts_by_id,
+		matches_by_planning_id,
+		now_ts,
+	});
 }
 
 function find_display_preparation_frontier_match(tournament, location_id, options = {}) {
@@ -1363,15 +1357,10 @@ function calculate_location_preparation_selection(tournament, location_id, optio
 		relevant_matches,
 		frontier,
 	});
-	const effective_required_preparation_count =
-		(tournament?.call_preparation_matches_automatically_enabled ? status.successor_need_count : 0);
-	const effective_missing_preparation_count = Math.max(0, effective_required_preparation_count - status.current_preparation_count);
-	const selected_matches = candidates.slice(0, status.missing_preparation_count);
-	const auto_selected_matches = candidates.slice(0, effective_missing_preparation_count);
-	const display_relevant_matches = get_location_display_relevant_matches(tournament, location_id, { courts_by_id });
-	const display_structurally_eligible_matches = display_relevant_matches;
-	const display_frontier = find_display_preparation_frontier_match(tournament, location_id, {
-		...options,
+		const display_relevant_matches = get_location_display_relevant_matches(tournament, location_id, { courts_by_id });
+		const display_structurally_eligible_matches = display_relevant_matches;
+		const display_frontier = find_display_preparation_frontier_match(tournament, location_id, {
+			...options,
 		courts_by_id,
 		matches_by_planning_id,
 		now_ts,
@@ -1396,10 +1385,15 @@ function calculate_location_preparation_selection(tournament, location_id, optio
 			matches_by_planning_id,
 			now_ts,
 		});
-	});
-	const effective_display_cutoff = display_cutoff || display_candidates[display_candidates.length - 1] || null;
+		});
+		const effective_display_cutoff = display_cutoff || display_candidates[display_candidates.length - 1] || null;
+		const effective_required_preparation_count =
+			(tournament?.call_preparation_matches_automatically_enabled ? status.successor_need_count : 0);
+		const effective_missing_preparation_count = Math.max(0, effective_required_preparation_count - status.current_preparation_count);
+		const selected_matches = display_candidates.slice(0, status.missing_preparation_count);
+		const auto_selected_matches = display_candidates.slice(0, status.missing_preparation_count);
 
-	return {
+		return {
 		location_id,
 		...status,
 		effective_required_preparation_count,

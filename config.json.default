@@ -2,6 +2,8 @@
 	"port": 4000,
 	"bup_location": "static/bup/downloaded/",
 	"bup_index": "index.html",
+	"bup_v2_admin_wait_for_score_updates": false,
+	"bts_debug_output_enabled": false,
 	"report_errors": false,
 	"enable_https": false,
 	"https_port": 4433,

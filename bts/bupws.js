@@ -3,6 +3,8 @@ const async = require('async');
 const serror = require('./serror');
 const utils = require('./utils');
 const admin = require('./admin');
+const bupws_v2 = require('./bupws_v2');
+const debug_flags = require('./debug_flags');
 const cp = require("child_process");
 const os = require("os");
 const dns = require("dns");
@@ -10,6 +12,7 @@ const net = require("net");
 
 const btp_manager = require('./btp_manager');
 const btp_conn = require('./btp_conn');
+const calc = require('../static/bup/dev/js/calc');
 const ticker_manager = require('./ticker_manager');
 const update_queue = require('./update_queue');
 const match_automation = require('./match_automation');
@@ -55,6 +58,23 @@ function get_default_displaysettings_id(tournament, devicemode = 'display') {
 	return (tournament && tournament.displaysettings_general)
 		|| (tournament && tournament.displaysettings_general_tablet)
 		|| default_displaysettings_key;
+}
+
+async function is_bupws_v2_enabled(app, tournament_key) {
+	const tournament = await app.db.tournaments.findOne_async({ key: tournament_key || default_tournament_key });
+	debug_flags.set_from_tournament(tournament);
+	return !!(tournament && tournament.bupws_v2_enabled);
+}
+
+function send_use_bup_v2(ws, tournament_key) {
+	if (!ws || ws.readyState !== 1) {
+		return false;
+	}
+	ws.sendmsg({
+		type: 'use-bup-v2',
+		tournament_key,
+	});
+	return true;
 }
 
 function is_default_displaysetting_id(tournament, displaysetting_id) {
@@ -210,6 +230,7 @@ async function handle_persist_display_settings(app, ws, msg) {
 		}
 		client_court_displaysetting = await update_client_court_displaysetting(app, client_court_displaysetting.client_id, updatevalues);
 	}
+	await bupws_v2.reinitialize_client(app, tournament_key, client_id);
 }
 async function handle_score_update(app, ws, msg) {
 	return update_queue.instance().execute(update_queue.named('handle_score_update', () => new Promise((resolve) => {
@@ -530,7 +551,12 @@ function create_display_court_displaysettings(client_id, hostname, court_id, dis
 }
 
 async function handle_init(app, ws, msg) {
-	const tournament_key = msg.tournament_key;
+	const tournament_key = msg.tournament_key || default_tournament_key;
+	ws.last_tournament_key = tournament_key;
+	if (await is_bupws_v2_enabled(app, tournament_key)) {
+		send_use_bup_v2(ws, tournament_key);
+		return;
+	}
 	var court_id = undefined;
 	ws.panel_devicemode = normalize_panel_devicemode(msg.panel_settings && msg.panel_settings.devicemode);
 	ws.court_id = undefined;
@@ -561,8 +587,139 @@ async function async_handle_select_court_assignment(app, ws, msg) {
 	send_courts(app, ws, tournament_key);
 }
 
-async function send_finshed_confirmed(app, tournament_key, court_id) {
-	notify_change(app, tournament_key, court_id, 'confirm-match-finished', {});
+async function send_finshed_confirmed(app, tournament_key, court_id, match_id) {
+	const val = {
+		court_id,
+		match_id: match_id ? 'bts_' + match_id : null,
+		raw_match_id: match_id || null,
+	};
+	for (const panel_ws of all_panels) {
+		if (!panel_ws) {
+			continue;
+		}
+		if (panel_ws.court_id !== court_id && panel_ws.court_id !== undefined) {
+			continue;
+		}
+		notify_change_send(app, panel_ws, tournament_key, 'confirm-match-finished', val);
+	}
+}
+
+async function confirm_match_finished_from_admin(app, tournament_key, match_id, court_id) {
+	return update_queue.instance().execute(update_queue.named('confirm_match_finished_from_admin', async () => {
+		const match_utils = require('./match_utils');
+		const [match, tournament, court] = await Promise.all([
+			match_utils.fetch_match(app, tournament_key, match_id),
+			app.db.tournaments.findOne_async({ key: tournament_key }),
+			app.db.courts.findOne_async({ tournament_key, _id: court_id }),
+		]);
+		if (!match) {
+			throw new Error('Match not found ' + JSON.stringify(match_id));
+		}
+		if (!tournament) {
+			throw new Error('Tournament not found ' + JSON.stringify(tournament_key));
+		}
+		if (!court) {
+			throw new Error('Court not found ' + JSON.stringify(court_id));
+		}
+		const network_score = Array.isArray(match.network_score) ? match.network_score : [];
+		let team1_won = typeof match.team1_won === 'boolean' ? match.team1_won : null;
+		if (team1_won == null) {
+			const winner = calc.match_winner(match.setup, network_score);
+			if (winner === 'left') {
+				team1_won = true;
+			} else if (winner === 'right') {
+				team1_won = false;
+			}
+		}
+		if (team1_won == null) {
+			throw new Error('Match has no finished result to confirm');
+		}
+		const presses = Array.isArray(match.presses) ? match.presses.slice() : [];
+		if (!presses.length || presses[presses.length - 1].type !== 'postmatch-confirm') {
+			presses.push({
+				type: 'postmatch-confirm',
+				timestamp: real_now_ms(app),
+			});
+		}
+		const end_ts = match.end_ts || now_ms(app);
+		const simulated_match = {
+			...match,
+			team1_won,
+			setup: {
+				...match.setup,
+				now_on_court: false,
+				state: 'finished',
+			},
+		};
+		const preparation_successor_state = match_automation.calculate_preparation_successor_state(simulated_match, tournament, {
+			now_ts: now_ms(app),
+		});
+		const update = {
+			presses,
+			end_ts,
+			team1_won,
+			btp_winner: team1_won ? 1 : 2,
+			btp_needsync: true,
+			'setup.now_on_court': false,
+			'setup.state': 'finished',
+			'setup.needs_preparation_successor': preparation_successor_state.needs_preparation_successor,
+			'setup.needs_preparation_successor_ts': preparation_successor_state.needs_preparation_successor_ts,
+		};
+		const [_numAffected, updated_match] = await app.db.matches.update_async(
+			{ _id: match_id, tournament_key },
+			{ $set: update },
+			{ returnUpdatedDocs: true }
+		);
+		if (!updated_match) {
+			throw new Error('Match confirmation update failed ' + JSON.stringify(match_id));
+		}
+		send_finshed_confirmed(app, tournament_key, updated_match.setup.court_id, match_id);
+		bupws_v2.send_finished_confirmed(app, tournament_key, updated_match.setup.court_id, match_id).catch((err) => {
+			console.error('[bup v2] send finished confirmed failed', err);
+		});
+		handle_score_change(app, tournament_key, updated_match.setup.court_id);
+		admin.notify_change(app, tournament_key, 'score', {
+			match_id,
+			network_score: updated_match.network_score,
+			team1_won: updated_match.team1_won,
+			shuttle_count: updated_match.shuttle_count,
+			presses: updated_match.presses,
+			court_id: updated_match.setup && updated_match.setup.court_id,
+			now_on_court: updated_match.setup && updated_match.setup.now_on_court,
+		});
+		btp_manager.update_score(app, updated_match);
+		await match_utils.reset_player_tabletoperator(app, tournament_key, match_id, end_ts);
+		await new Promise((resolve, reject) => {
+			_clear_court_match_reference_after_finish(
+				app,
+				tournament_key,
+				{ tournament_key, _id: court_id },
+				court,
+				match_id,
+				true,
+				(err) => err ? reject(err) : resolve()
+			);
+		});
+		handle_score_change(app, tournament_key, court_id);
+		ticker_manager.pushall(app, tournament_key);
+		await new Promise((resolve, reject) => {
+			match_utils.auto_execute_preparation_selection_for_setup(app, tournament, updated_match.setup, (err) => {
+				if (err) {
+					return reject(err);
+				}
+				resolve();
+			});
+		});
+		try {
+			await match_utils.call_preparation_match_on_court(app, tournament_key, court_id);
+		} catch (err) {
+			const message = err && (err.message || String(err));
+			if (!/No match found to call on court/.test(message)) {
+				throw err;
+			}
+		}
+		return updated_match;
+	}));
 }
 
 async function send_advertisement_add(app, tournament_key, advertisement) {
@@ -875,7 +1032,7 @@ function handle_command_done(app, ws, msg) {
 }
 
 function handle_score_change(app, tournament_key, court_id) {
-	console.log('[bts] auto_call_trace:bup_handle_score_change', {
+	debug_flags.log(app, tournament_key, '[bts] auto_call_trace:bup_handle_score_change', {
 		ts: now_ms(app),
 		tournament_key,
 		court_id: court_id || null,
@@ -885,6 +1042,9 @@ function handle_score_change(app, tournament_key, court_id) {
 	if (all_matches_delivery()) {
 		matches_handler(app, null, tournament_key, undefined);
 	}
+	bupws_v2.handle_score_change(app, tournament_key, court_id).catch((err) => {
+		console.error('[bup v2] score change hook failed', err);
+	});
 }
 
 function get_bup_match_priority(match, prefer_finished_first) {
@@ -1023,7 +1183,7 @@ function matches_handler(app, ws, tournament_key, court_id) {
 			const event = create_event_representation(tournament);
 			event.matches = matches;
 			event.courts = courts;
-			console.log('[bts] auto_call_trace:bup_score_update_payload', {
+			debug_flags.log(app, tournament_key, '[bts] auto_call_trace:bup_score_update_payload', {
 				ts: now_ms(app),
 				tournament_key,
 				court_id: court_id || null,
@@ -1139,26 +1299,77 @@ async function restart_panel(app, tournament_key, client_id, new_court_id) {
 			court_id: new_court_id
 		}
 		client_court_displaysetting = await update_client_court_displaysetting(app, client_id, updatevalues);
+		if (!client_court_displaysetting) {
+			const tournament = await app.db.tournaments.findOne_async({ key: tournament_key });
+			client_court_displaysetting = await persist_client_court_displaysetting(app, create_display_court_displaysettings(
+				client_id,
+				null,
+				new_court_id,
+				get_default_displaysettings_id(tournament, 'display'),
+				'display',
+			));
+		}
 	}
 	var display_online = reinitialize_panel(app, tournament_key, client_id, new_court_id, undefined, should_update_court);
 	if (client_court_displaysetting != null) { 
 		client_court_displaysetting.online = display_online;
 		admin.notify_change(app, tournament_key, 'display_status_changed', { 'display_court_displaysetting': client_court_displaysetting });
 	}
+	await bupws_v2.reinitialize_client(app, tournament_key, client_id);
 	
 }
 
 async function change_display_mode(app, tournament_key, client_id, new_displaysettings_id) {
 	if (new_displaysettings_id) {
+		const [new_displaysetting, current_display] = await Promise.all([
+			app.db.displaysettings.findOne_async({ id: new_displaysettings_id }),
+			get_display_court_displaysettings(app, client_id),
+		]);
 		const updatevalues = {
 			displaysetting_id: new_displaysettings_id
 		}
-		const client_court_displaysetting = await update_client_court_displaysetting(app, client_id, updatevalues);
-		var display_online = reinitialize_panel(app, tournament_key, client_id, null, new_displaysettings_id);
+		if (new_displaysetting) {
+			updatevalues.panel_devicemode = normalize_panel_devicemode(new_displaysetting.devicemode);
+		}
+		if (bupws_v2.is_fieldless_multi_court_display_style(new_displaysetting)) {
+			updatevalues.court_id = bupws_v2.MULTI_COURT_ASSIGNMENT_ID;
+		} else if (current_display && current_display.court_id === bupws_v2.MULTI_COURT_ASSIGNMENT_ID) {
+			updatevalues.court_id = undefined;
+		}
+		let client_court_displaysetting = await update_client_court_displaysetting(app, client_id, updatevalues);
+		if (!client_court_displaysetting) {
+			const connected_panel = fetch_panel(client_id);
+			const initial_court_id = Object.prototype.hasOwnProperty.call(updatevalues, 'court_id')
+				? updatevalues.court_id
+				: (current_display && current_display.court_id) || (connected_panel && connected_panel.court_id);
+			client_court_displaysetting = await persist_client_court_displaysetting(app, create_display_court_displaysettings(
+				client_id,
+				null,
+				initial_court_id,
+				new_displaysettings_id,
+				updatevalues.panel_devicemode || (new_displaysetting && new_displaysetting.devicemode) || 'display',
+			));
+			if (!client_court_displaysetting.court_id && current_display && current_display.court_id) {
+				client_court_displaysetting = await update_client_court_displaysetting(app, client_id, {
+					court_id: current_display.court_id,
+				});
+			}
+		}
+		const should_update_court = Object.prototype.hasOwnProperty.call(updatevalues, 'court_id');
+		var display_online = reinitialize_panel(
+			app,
+			tournament_key,
+			client_id,
+			updatevalues.court_id,
+			new_displaysettings_id,
+			should_update_court,
+			updatevalues.panel_devicemode,
+		);
 		if (client_court_displaysetting) { 
 			client_court_displaysetting.online = display_online;
 			admin.notify_change(app, tournament_key, 'display_status_changed', { 'display_court_displaysetting': client_court_displaysetting });
 		}
+		await bupws_v2.refresh_client(app, tournament_key, client_id);
 	}
 }
 async function change_default_display_mode(app, tournament, old_displaysettings_id, new_displaysettings_id) {
@@ -1184,16 +1395,39 @@ async function change_default_display_mode(app, tournament, old_displaysettings_
 	}
 }
 
+async function refresh_protocol_mode(app, tournament_key) {
+	const use_v2 = await is_bupws_v2_enabled(app, tournament_key);
+	for (const panel_ws of all_panels) {
+		if (panel_ws.last_tournament_key && panel_ws.last_tournament_key !== tournament_key) {
+			continue;
+		}
+		if (use_v2) {
+			send_use_bup_v2(panel_ws, tournament_key);
+		} else {
+			initialize_client(
+				panel_ws,
+				app,
+				tournament_key,
+				panel_ws.court_id,
+				undefined,
+				panel_ws.panel_devicemode,
+			);
+		}
+	}
+	await bupws_v2.refresh_tournament(app, tournament_key);
+}
 
 
-function reinitialize_panel(app, tournament_key, client_id, new_court_id, displaysetting_id, apply_court_id = false) {
+
+function reinitialize_panel(app, tournament_key, client_id, new_court_id, displaysetting_id, apply_court_id = false, panel_devicemode) {
 	for (const panel_ws of all_panels) {
 		const ws_client_id = determine_client_id(panel_ws);
 		if (client_id == ws_client_id) {
 			if (apply_court_id) {
 				panel_ws.court_id = new_court_id;
 			}
-			initialize_client(panel_ws, app, tournament_key, panel_ws.court_id, displaysetting_id, panel_ws.panel_devicemode);
+			const effective_panel_devicemode = panel_devicemode || panel_ws.panel_devicemode;
+			initialize_client(panel_ws, app, tournament_key, panel_ws.court_id, displaysetting_id, effective_panel_devicemode);
 			return true;
 		}
 	}
@@ -1237,6 +1471,7 @@ async function add_display_status(app, tournament, displays, callback) {
 
 		}
 	}
+	await bupws_v2.add_display_status(app, tournament, displays);
 	return callback(displays);
 }
 
@@ -1255,10 +1490,12 @@ module.exports = {
 	update_device_info,
 	restart_panel,
 	send_finshed_confirmed,
+	confirm_match_finished_from_admin,
 	send_advertisement_add,
 	send_advertisement_remove,
 	change_display_mode,
 	change_default_display_mode,
+	refresh_protocol_mode,
 	add_display_status,
 	create_match_representation,
 	create_event_representation,

@@ -13,6 +13,7 @@ const stournament = require('./stournament');
 const ticker_manager = require('./ticker_manager');
 const utils = require('./utils');
 const match_automation = require('./match_automation');
+const debug_flags = require('./debug_flags');
 
 function now_ms(app) {
 	return app?.clock ? app.clock.now_ms() : Date.now();
@@ -39,6 +40,7 @@ function _require_msg(ws, msg, fields) {
 function _annotate_tournament(tournament) {
 	const tz = utils.get_system_timezone();
 	tournament.system_timezone = tz;
+	debug_flags.set_from_tournament(tournament);
 }
 
 function _get_default_displaysetting_requirements(tournament, displaysetting_id) {
@@ -103,8 +105,17 @@ function handle_confirm_match_finished(app, ws, msg) {
 	if (!msg.court_id) {
 		return ws.respond(msg, { message: 'Missing court' });
 	}
+	if (!msg.match_id) {
+		return ws.respond(msg, { message: 'Missing match' });
+	}
 	const bupws = require('./bupws');
-	bupws.send_finshed_confirmed(app, msg.tournament_key, msg.court_id);
+	bupws.confirm_match_finished_from_admin(app, msg.tournament_key, msg.match_id, msg.court_id)
+		.then(() => {
+			ws.respond(msg, null);
+		})
+		.catch((err) => {
+			ws.respond(msg, err);
+		});
 }
 
 function handle_tournament_edit_props(app, ws, msg) {
@@ -128,6 +139,7 @@ function handle_tournament_edit_props(app, ws, msg) {
 		'self_check_in_called_overlay_duration_ms',
 		'ticker_enabled', 'ticker_url', 'ticker_password',
 		'language', 'dm_style', 'displaysettings_general', 'displaysettings_general_tablet',
+		'bupws_v2_enabled', 'bup_v2_admin_wait_for_score_updates', 'bts_debug_output_enabled',
 		'tabletoperator_enabled', 'tabletoperator_break_seconds',
 		'announcement_speed','announcement_pause_time_ms',
 		'tabletoperator_set_break_after_tabletservice','tabletoperator_with_state_enabled',
@@ -199,6 +211,7 @@ function handle_tournament_edit_props(app, ws, msg) {
 			if (utils.has_key(props, k => /^ticker_/.test(k))) {
 				ticker_manager.reconfigure(app, t);
 			}
+			debug_flags.set_from_tournament(t);
 			notify_change(app, key, 'props', t);
 			if (utils.has_key(props, (k) => k === 'technical_official_auto_assignment_mode' || k === 'official_rotation_mode')) {
 				const match_utils = require('./match_utils');
@@ -232,6 +245,12 @@ function handle_tournament_edit_props(app, ws, msg) {
 				const bupws = require('./bupws');
 				bupws.change_default_display_mode(app, t, tournament.displaysettings_general_tablet, t.displaysettings_general_tablet);
 			}
+			if (Object.prototype.hasOwnProperty.call(props, 'bupws_v2_enabled')) {
+				const bupws = require('./bupws');
+				bupws.refresh_protocol_mode(app, key).catch((refreshErr) => {
+					console.warn('[bts] failed to refresh BUP protocol mode', refreshErr && (refreshErr.stack || refreshErr.message || String(refreshErr)));
+				});
+			}
 
 			ws.respond(msg, err);
 		});
@@ -258,6 +277,7 @@ function handle_tournament_edit_prop(app, ws, msg) {
 		'self_check_in_called_overlay_duration_ms',
 		'ticker_enabled', 'ticker_url', 'ticker_password',
 		'language', 'dm_style', 'displaysettings_general', 'displaysettings_general_tablet',
+		'bupws_v2_enabled', 'bup_v2_admin_wait_for_score_updates', 'bts_debug_output_enabled',
 		'tabletoperator_enabled', 'tabletoperator_break_seconds',
 		'announcement_speed', 'announcement_pause_time_ms',
 		'tabletoperator_set_break_after_tabletservice', 'tabletoperator_with_state_enabled',
@@ -335,6 +355,7 @@ function handle_tournament_edit_prop(app, ws, msg) {
 			if (/^ticker_/.test(field)) {
 				ticker_manager.reconfigure(app, t);
 			}
+			debug_flags.set_from_tournament(t);
 			if (field === 'automation_enabled' && t[field] === true) {
 				const match_utils = require('./match_utils');
 				match_utils.queue_auto_assign_technical_officials_when_available(app, key);
@@ -359,6 +380,12 @@ function handle_tournament_edit_prop(app, ws, msg) {
 			if (!tournament.displaysettings_general_tablet || (field === 'displaysettings_general_tablet' && tournament.displaysettings_general_tablet != t.displaysettings_general_tablet)){
 				const bupws = require('./bupws');
 				bupws.change_default_display_mode(app, t, tournament.displaysettings_general_tablet, t.displaysettings_general_tablet);
+			}
+			if (field === 'bupws_v2_enabled') {
+				const bupws = require('./bupws');
+				bupws.refresh_protocol_mode(app, key).catch((refreshErr) => {
+					console.warn('[bts] failed to refresh BUP protocol mode', refreshErr && (refreshErr.stack || refreshErr.message || String(refreshErr)));
+				});
 			}
 
 			ws.respond(msg, err);
@@ -442,6 +469,9 @@ function handle_tournament_edit_logo(app, ws, msg) {
 			}
 
 			notify_change(app, key, 'logo_changed', {logo_foreground_color : props.logo_foreground_color, logo_background_color: props.logo_background_color});
+			require('./bupws_v2').refresh_tournament(app, key).catch((refresh_err) => {
+				console.error('[bup v2] logo color refresh failed', refresh_err);
+			});
 
 			ws.respond(msg, err);
 		});
@@ -1715,11 +1745,11 @@ function handle_match_player_check_in (app, ws, msg) {
 					return reject(new Error('Player not found in match'));
 				}
 
-				match_utils.match_update(app, match, undefined, (err) => {
+					match_utils.match_update(app, match, undefined, (err) => {
 					if (err) {
 						return reject(err);
 					}
-					console.log('[bts] auto_call_trace:player_check_in_updated', {
+					debug_flags.log(app, msg.tournament_key, '[bts] auto_call_trace:player_check_in_updated', {
 						ts: now_ms(app),
 						tournament_key: msg.tournament_key,
 						match_id: msg.match_id,
@@ -1736,7 +1766,7 @@ function handle_match_player_check_in (app, ws, msg) {
 
 function trigger_auto_call_after_readiness_change(app, tournament_key) {
 	const match_utils = require('./match_utils');
-	console.log('[bts] auto_call_trace:readiness_trigger_start', {
+	debug_flags.log(app, tournament_key, '[bts] auto_call_trace:readiness_trigger_start', {
 		ts: now_ms(app),
 		tournament_key,
 	});
@@ -1745,7 +1775,7 @@ function trigger_auto_call_after_readiness_change(app, tournament_key) {
 			console.warn('[bts] failed to auto select preparation matches after readiness change', selectionErr && (selectionErr.stack || selectionErr.message || String(selectionErr)));
 			return;
 		}
-		console.log('[bts] auto_call_trace:readiness_trigger_after_preparation_selection', {
+		debug_flags.log(app, tournament_key, '[bts] auto_call_trace:readiness_trigger_after_preparation_selection', {
 			ts: now_ms(app),
 			tournament_key,
 		});
@@ -1754,7 +1784,7 @@ function trigger_auto_call_after_readiness_change(app, tournament_key) {
 				console.warn('[bts] failed to auto call matches on free courts after readiness change', callErr && (callErr.stack || callErr.message || String(callErr)));
 				return;
 			}
-			console.log('[bts] auto_call_trace:readiness_trigger_after_auto_call', {
+			debug_flags.log(app, tournament_key, '[bts] auto_call_trace:readiness_trigger_after_auto_call', {
 				ts: now_ms(app),
 				tournament_key,
 			});
@@ -1811,7 +1841,7 @@ function handle_match_participant_check_in(app, ws, msg) {
 					if (update_err) {
 						return reject(update_err);
 					}
-					console.log('[bts] auto_call_trace:participant_check_in_updated', {
+					debug_flags.log(app, msg.tournament_key, '[bts] auto_call_trace:participant_check_in_updated', {
 						ts: now_ms(app),
 						tournament_key: msg.tournament_key,
 						match_id: msg.match_id,
@@ -3340,8 +3370,9 @@ function handle_relocate_display(app, ws, msg) {
 	const client_id = msg.display_setting_id;
 	const new_court_id = msg.new_court_id;
 	const bupws = require('./bupws');
-	bupws.restart_panel(app, tournament_key, client_id, new_court_id);
-	ws.respond(msg);
+	bupws.restart_panel(app, tournament_key, client_id, new_court_id)
+		.then(() => ws.respond(msg))
+		.catch((err) => ws.respond(msg, err));
 }
 
 function handle_change_display_mode(app, ws, msg) {
@@ -3349,8 +3380,9 @@ function handle_change_display_mode(app, ws, msg) {
 	const client_id = msg.display_setting_id;
 	const new_displaysettings_id = msg.new_displaysettings_id;
 	const bupws = require('./bupws');
-	bupws.change_display_mode(app, tournament_key, client_id, new_displaysettings_id);
-	ws.respond(msg);
+	bupws.change_display_mode(app, tournament_key, client_id, new_displaysettings_id)
+		.then(() => ws.respond(msg))
+		.catch((err) => ws.respond(msg, err));
 }
 
 
@@ -3468,7 +3500,7 @@ function notify_change(app, tournament_key, ctype, val) {
 		};
 	}
 	if (ctype === 'match_preparation_call' && payload && typeof payload === 'object') {
-		console.log('[bts] debug:match_preparation_call_sent', {
+		debug_flags.log(app, payload.match?.tournament_key || payload.match?.setup?.tournament_key || null, '[bts] debug:match_preparation_call_sent', {
 			match_id: payload.match__id || payload.match?._id || null,
 			announcement_ts: payload._announcement_ts || null,
 			state: payload.match?.setup?.state || null,
@@ -3562,6 +3594,9 @@ async function async_handle_tournament_upload_logo(app, ws, msg) {
 		{$set: {logo_id, logo_name}},
 		{returnUpdatedDocs: true});
 	notify_change(app, msg.tournament_key, 'logo_changed', {logo_id, logo_name});
+	require('./bupws_v2').refresh_tournament(app, msg.tournament_key).catch((refresh_err) => {
+		console.error('[bup v2] logo refresh failed', refresh_err);
+	});
 
 	return ws.respond(msg, null, {});
 }

@@ -7,6 +7,7 @@ const async = require('async');
 
 const btp_proto = require('./btp_proto');
 const btp_sync = require('./btp_sync');
+const debug_flags = require('./debug_flags');
 const update_queue = require('./update_queue');
 const serror = require('./serror');
 
@@ -158,7 +159,7 @@ class BTPConn {
 						if (response && response != null) {
 							const value = await btp_sync.sync_btp_data(connection.app, connection.tkey, response);
 							const match_utils = require('./match_utils');
-							console.log('[bts] auto_call_trace:post_sync_reevaluation_start', {
+							debug_flags.log(connection.app, connection.tkey, '[bts] auto_call_trace:post_sync_reevaluation_start', {
 								ts: now_ms(connection.app),
 								tournament_key: connection.tkey,
 								reschedule_fetch: reschedule_fetch === true,
@@ -168,7 +169,7 @@ class BTPConn {
 									console.warn('[bts] failed to auto select preparation matches after fetch', selectionErr && (selectionErr.stack || selectionErr.message || String(selectionErr)));
 									return;
 								}
-								console.log('[bts] auto_call_trace:post_sync_preparation_done', {
+								debug_flags.log(connection.app, connection.tkey, '[bts] auto_call_trace:post_sync_preparation_done', {
 									ts: now_ms(connection.app),
 									tournament_key: connection.tkey,
 								});
@@ -177,7 +178,7 @@ class BTPConn {
 										console.warn('[bts] failed to auto call matches on free courts after fetch', callErr && (callErr.stack || callErr.message || String(callErr)));
 										return;
 									}
-									console.log('[bts] auto_call_trace:post_sync_on_court_done', {
+									debug_flags.log(connection.app, connection.tkey, '[bts] auto_call_trace:post_sync_on_court_done', {
 										ts: now_ms(connection.app),
 										tournament_key: connection.tkey,
 									});

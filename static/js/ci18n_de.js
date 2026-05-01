@@ -1,4 +1,8 @@
-var ci18n_de = {
+var ci18n_de = Object.assign(
+	{},
+	(typeof i18n_de !== 'undefined' ? i18n_de : {}),
+	(typeof ci18n_de !== 'undefined' ? ci18n_de : {}),
+{
 
 	'_code': 'de',
 	'_name': 'Deutsch (Deutschland)',
@@ -136,8 +140,12 @@ var ci18n_de = {
 	'display_setting:show_court_number': 'Zeige Spielfeldnummer',
 	'display_setting:show_competition': 'Zeige die Konkurenz',
 	'display_setting:show_round': 'Zeige die Runde',
+	'display_setting:show_players': 'Zeige Spielernamen',
+	'display_setting:show_team_name': 'Zeige Teamnamen',
 	'display_setting:show_middle_name': 'Zeige den zweiten Vornamen der Spieler',
+	'display_setting:abbreviate_first_name': 'Vornamen abkürzen',
 	'display_setting:show_doubles_receiving': 'Unterstreiche den annehmenden Spieler im Doppel',
+	'display_setting:tournament_overview_courts': 'Angezeigte Felder:',
 	'display_setting:colors': 'Farben: ',
 	'display_setting:use_team_colors': 'Verwende Team Farben',
 	'display_setting:scale': 'Skalierung: ',
@@ -152,8 +160,8 @@ var ci18n_de = {
 	'display_setting:fullscreen_ask'    : 'Vollbildmodus anfragen: ',
 	'display_setting:show_announcements': 'Ansagen zeigen: ',
 	'display_setting:tablet_mode': 'Tablet-Modus: ',
-	'display_setting:tablet_mode:umpire': 'Schiedsrichterpanel',
-	'display_setting:tablet_mode:scorecard': 'Spielzettel',
+	'display_setting:tablet_mode:umpire': 'Ergebniseingabe (Schiedsrichter)',
+	'display_setting:tablet_mode:scorecard': 'Ergebniseingabe (Spielzettel)',
 	'display_setting:neversettings': 'Settings-Dialog auf dem Gerät sperren',
 	'display_setting:autohide': 'Verberge Einstellungen nach (ms): ',
 	'display_setting:click_mode': 'Touch-Erkennung: ',
@@ -193,6 +201,9 @@ var ci18n_de = {
 	'tournament:edit:dm_style': 'Standard-Ansicht:',
 	'tournament:edit:displaysettings_general': 'Standard-Displayeinstellung:',
 	'tournament:edit:displaysettings_general_tablet': 'Standard-Tableteinstellung:',
+	'tournament:edit:bupws_v2_enabled': 'V2-Protokoll für alle Geräte verwenden',
+	'tournament:edit:bup_v2_admin_wait_for_score_updates': 'Schnelle V2-Score-Updates in Admin-Warteanzeige anzeigen',
+	'tournament:edit:bts_debug_output_enabled': 'Debug-Ausgaben in BTS/BUP aktivieren',
 	'tournament:edit:warmup_timer_behavior': 'Verhalten des Vorbereitungs-Countdowns:',
 	'tournament:edit:warmup_timer_behavior:bwf-2016': 'BWF ab 2016 (ab Auslosung)',
 	'tournament:edit:warmup_timer_behavior:legacy': 'Deutschland (ab Auslosung)',
@@ -262,6 +273,7 @@ var ci18n_de = {
 	'tournament:edit:displays:setting': 'Einstellung',
 	'tournament:edit:displays:description': 'Beschreibung',
 	'tournament:edit:displays:onlinestatus': 'Status',
+	'tournament:edit:displays:ack_time': 'Ack-Zeit (5 min)',
 	'tournament:edit:tablets': 'Tablets Einstellungen:',
 	'tournament:edit:ticker': 'Ticker Einstellungen:',
 	'tournament:edit:btp': 'Badminton Turnier Planer Einstellungen:',
@@ -398,7 +410,7 @@ var ci18n_de = {
 	'tabletoperator:move_down': 'In Liste zurückstellen',
 	'tabletoperator:remove': 'Von Liste nehmen',
 	'csvexport:winners': 'Urkunden-Export (Word/CSV)',
-};
+});
 
 /*@DEV*/
 if ((typeof module !== 'undefined') && (typeof require !== 'undefined')) {

@@ -1,4 +1,8 @@
-var ci18n_en = {
+var ci18n_en = Object.assign(
+	{},
+	(typeof i18n_en !== 'undefined' ? i18n_en : {}),
+	(typeof ci18n_en !== 'undefined' ? ci18n_en : {}),
+{
 
 	'_code': 'en',
 	'_name': 'English',
@@ -136,8 +140,12 @@ var ci18n_en = {
 	'display_setting:show_court_number': 'Show court number',
 	'display_setting:show_competition': 'Show the competition',
 	'display_setting:show_round': 'Show the round',
+	'display_setting:show_players': 'Show player names',
+	'display_setting:show_team_name': 'Show team names',
 	'display_setting:show_middle_name': 'Show middle names of players',
+	'display_setting:abbreviate_first_name': 'Abbreviate first names',
 	'display_setting:show_doubles_receiving': 'Underline the receiving player in doubles',
+	'display_setting:tournament_overview_courts': 'Displayed courts:',
 	'display_setting:colors': 'Colors: : ',
 	'display_setting:use_team_colors': 'Use team colors',
 	'display_setting:scale': 'Scale: : ',
@@ -190,6 +198,9 @@ var ci18n_en = {
 	'tournament:edit:dm_style': 'Default display style:',
 	'tournament:edit:displaysettings_general': 'Default displaysetting:',
 	'tournament:edit:displaysettings_general_tablet': 'Default tablet setting:',
+	'tournament:edit:bupws_v2_enabled': 'Use V2 protocol for all devices',
+	'tournament:edit:bup_v2_admin_wait_for_score_updates': 'Show fast V2 score updates in admin wait indicator',
+	'tournament:edit:bts_debug_output_enabled': 'Enable debug output in BTS/BUP',
 	'tournament:edit:warmup_timer_behavior': 'Behaviour of the preparation countdown:',
 	'tournament:edit:warmup_timer_behavior:bwf-2016': 'BWF 2016+ (after choice of side)',
 	'tournament:edit:warmup_timer_behavior:legacy': 'legacy (after choice of side)',
@@ -260,6 +271,7 @@ var ci18n_en = {
 	'tournament:edit:displays:setting': 'Setting',
 	'tournament:edit:displays:description': 'Description',
 	'tournament:edit:displays:onlinestatus': 'Status',
+	'tournament:edit:displays:ack_time': 'Ack time (5 min)',
 	'tournament:edit:tablets': 'Tablets Settings:',
 	'tournament:edit:ticker': 'Ticker Settings:',
 	'tournament:edit:btp': 'Badminton Tournament Planer Settings:',
@@ -393,7 +405,7 @@ var ci18n_en = {
 	'tabletoperator:move_down': 'Move down in list',
 	'tabletoperator:remove': 'Remove from list',
 	'csvexport:winners': 'Certificate export (Word/CSV)',
-};
+});
 
 /*@DEV*/
 if ((typeof module !== 'undefined') && (typeof require !== 'undefined')) {

@@ -78,8 +78,8 @@ function translate(langcode, str, data, fallback) {
 	return res;
 }
 
-function simple_translate(str, data) {
-	return translate(lang, str, data);
+function simple_translate(str, data, fallback) {
+	return translate(lang, str, data, fallback);
 }
 
 function get_lang() {

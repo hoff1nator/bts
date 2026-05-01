@@ -1,4 +1,8 @@
-var ci18n_nl = {
+var ci18n_nl = Object.assign(
+	{},
+	(typeof i18n_nl !== 'undefined' ? i18n_nl : {}),
+	(typeof ci18n_nl !== 'undefined' ? ci18n_nl : {}),
+{
 
 	'_code': 'nl',
 	'_name': 'Nederlands',
@@ -101,7 +105,10 @@ var ci18n_nl = {
 	'display_setting:show_court_number': 'Toon baannummer',
 	'display_setting:show_competition': 'Toon de competitie',
 	'display_setting:show_round': 'Toon de ronde',
+	'display_setting:show_players': 'Toon spelersnamen',
+	'display_setting:show_team_name': 'Toon teamnamen',
 	'display_setting:show_middle_name': 'Toon tussenvoegsel naam van spelers',
+	'display_setting:abbreviate_first_name': 'Kort voornamen af',
 	'display_setting:show_doubles_receiving': 'Onderstreep de ontvangende speler in dubbels',
 	'display_setting:colors': 'Kleuren : ',
 	'display_setting:use_team_colors': 'Gebruik Teamkleuren',
@@ -150,6 +157,9 @@ var ci18n_nl = {
 	'tournament:edit:dm_style': 'Standaard schermstijl:',
 	'tournament:edit:displaysettings_general': 'Standaard scherminstelling:',
 	'tournament:edit:displaysettings_general_tablet': 'Standaard tabletinstelling:',
+	'tournament:edit:bupws_v2_enabled': 'V2-protocol voor alle apparaten gebruiken',
+	'tournament:edit:bup_v2_admin_wait_for_score_updates': 'Snelle V2-score-updates in admin-wachtweergave tonen',
+	'tournament:edit:bts_debug_output_enabled': 'Debug-uitvoer in BTS/BUP inschakelen',
 	'tournament:edit:warmup_timer_behavior': 'Gedrag voorbereidingstimer:',
 	'tournament:edit:warmup_timer_behavior:bwf-2016': 'BWF 2016+ (na keuze speelhelft)',
 	'tournament:edit:warmup_timer_behavior:legacy': 'Oud (na keuze speelhelft)',
@@ -210,6 +220,7 @@ var ci18n_nl = {
 	'tournament:edit:displays:setting': 'Instelling',
 	'tournament:edit:displays:description': 'Omschrijving',
 	'tournament:edit:displays:onlinestatus': 'Status',
+	'tournament:edit:displays:ack_time': 'Ack-tijd (5 min)',
 	'tournament:edit:tablets': 'Tablet-instellingen:',
 	'tournament:edit:ticker': 'Ticker-instellingen:',
 	'tournament:edit:btp': 'Badminton Tournament Planner-instellingen:',
@@ -269,7 +280,7 @@ var ci18n_nl = {
 	'tabletoperator:move_down': 'Omlaag in lijst',
 	'tabletoperator:remove': 'Verwijderen uit lijst',
 	'csvexport:winners': 'Oorkonde-export (Word/CSV)',
-};
+});
 
 /*@DEV*/
 if ((typeof module !== 'undefined') && (typeof require !== 'undefined')) {

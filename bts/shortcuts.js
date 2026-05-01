@@ -53,6 +53,7 @@ function umpire_handler(req, res) {
 
 		const bup_params = {
 			btsh_e: t.key,
+			bupws_v2: '1',
 		};
 		if (t.language && t.language !== 'auto') {
 			bup_params.lang = t.language;

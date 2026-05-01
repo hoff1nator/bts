@@ -643,6 +643,9 @@ function default_handler(rerender, special_funcs) {
 				if(display_setting.battery){
 					d.battery = display_setting.battery;
 				}
+				if (display_setting.display_render_stats) {
+					d.display_render_stats = display_setting.display_render_stats;
+				}
 				
 				if(d.displaysetting_id != last_d.displaysetting_id){
 					ctournament.update_general_displaysettings(c);
@@ -661,9 +664,22 @@ function default_handler(rerender, special_funcs) {
 			utils.remove(curt.displays, display);
 			ctournament.delete_display(c);
 			break;
+		case 'display_render_stats':
+			var d = utils.find(curt.displays, m => m.client_id === c.val.client_id);
+			if (!d) {
+				break;
+			}
+			d.online = true;
+			d.display_render_stats = c.val.display_render_stats;
+			ctournament.update_display(d);
+			break;
 		case 'display_wait_for_done':
 			var d = utils.find(curt.displays, m => m.client_id === c.val.client_id);
+			if (!d) {
+				break;
+			}
 			d.wait_for_ctype = c.val.ctype;
+			d.wait_for_message_id = c.val.message_id || null;
 			if(!d.wait_for_done) {
 				d.wait_for_done = true;
 				ctournament.update_display(d);
@@ -671,8 +687,13 @@ function default_handler(rerender, special_funcs) {
 			break;
 		case 'display_is_done':
 			var d = utils.find(curt.displays, m => m.client_id === c.val.client_id);
-			if(d.wait_for_done && d.wait_for_ctype == c.val.ctype) {
+			if (!d) {
+				break;
+			}
+			const message_id_matches = !d.wait_for_message_id || d.wait_for_message_id === c.val.message_id;
+			if(d.wait_for_done && d.wait_for_ctype == c.val.ctype && message_id_matches) {
 				d.wait_for_done = false;
+				d.wait_for_message_id = null;
 				ctournament.update_display(d);
 			}
 			break;

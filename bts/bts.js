@@ -13,6 +13,7 @@ const favicon = require('serve-favicon');
 const admin = require('./admin');
 const btp_manager = require('./btp_manager');
 const bupws = require('./bupws');
+const bupws_v2 = require('./bupws_v2');
 const clock = require('./clock');
 const database = require('./database');
 const http_api = require('./http_api');
@@ -123,6 +124,8 @@ function create_app(config, db) {
 			return wshandler.handle(admin, app, ws);
 		} else if (location.path === '/ws/bup') {
 			return wshandler.handle(bupws, app, ws);
+		} else if (location.path === '/ws/bup_v2') {
+			return wshandler.handle(bupws_v2, app, ws);
 		} else {
 			ws.send(JSON.stringify({
 				type: 'error',
