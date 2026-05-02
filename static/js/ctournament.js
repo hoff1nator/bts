@@ -423,6 +423,8 @@ var ctournament = (function() {
 		});
 	}
 
+	let refresh_location_announcement_previews = function() {};
+
 	function update_edit_dependencies() {
 		if (current_view !== 'edit') {
 			return;
@@ -447,6 +449,7 @@ var ctournament = (function() {
 		const ticker_enabled = !!curt.ticker_enabled;
 		_set_disabled_by_name('ticker_url', !ticker_enabled);
 		_set_disabled_by_name('ticker_password', !ticker_enabled);
+		refresh_location_announcement_previews();
 
 		const tabletoperator_enabled = !!curt.tabletoperator_enabled;
 		[
@@ -6718,9 +6721,9 @@ var ctournament = (function() {
 
 		const tr = uiu.el(locations_tbody, 'tr');
 		uiu.el(tr, 'th', {}, ci18n('tournament:edit:location'));
-		uiu.el(tr, 'th', {}, 'In Vorbereitungd Ergänzung');
-		uiu.el(tr, 'th', {}, 'Meetingpoint durchsage');
-		uiu.el(tr, 'th', {}, 'In Vorbereitung Icon');
+		uiu.el(tr, 'th', {}, 'in Vorbereitung Ergänzung');
+		uiu.el(tr, 'th', {}, 'Meetingpoint-Durchsage');
+		uiu.el(tr, 'th', {}, 'in Vorbereitung Icon');
 		uiu.el(tr, 'th', {}, '');
 
 		let highlight_in_use = [];
@@ -6730,8 +6733,126 @@ var ctournament = (function() {
 			}
 		}
 
+		function resolve_singular_plural_template(text, use_plural) {
+			return (text || '').replace(/\{([^{}\/]*)\/([^{}]*)\}/g, function(match, singular, plural) {
+				return use_plural ? plural : singular;
+			});
+		}
+
+		function create_preparation_preview_text(preparation_text, use_plural) {
+			const addition = resolve_singular_plural_template(preparation_text, use_plural).trim();
+			return ci18n('announcements:preparation') + (addition ? ' ' + addition : '');
+		}
+
+		function create_meetingpoint_preview_text(meetingpoint_text, use_plural) {
+			return resolve_singular_plural_template(meetingpoint_text, use_plural).trim() || ci18n('announcements:meetingpoint');
+		}
+
+		function create_second_preparation_call_preview_text(name, preparation_text, use_plural) {
+			const addition = resolve_singular_plural_template(preparation_text, use_plural).trim();
+			return ci18n('announcements:second_call') + ' ' + ci18n('announcements:preparation') + ' ' + ci18n('announcements:second_call_for') + ':' + name + (addition ? ' ' + addition : '') + '!';
+		}
+
+		function create_tablet_meetingpoint_preview_text(name, meetingpoint_text, use_plural) {
+			let meetingpoint = create_meetingpoint_preview_text(meetingpoint_text, use_plural);
+			meetingpoint = meetingpoint.replace("bitte meldet euch ", "");
+			meetingpoint = meetingpoint.replace("Bitte meldet euch ", "");
+			meetingpoint = meetingpoint.replace("!", "");
+			return name + ', ' + ci18n('announcements:please_as_tablet_service') + ' ' + meetingpoint + 'melden!';
+		}
+
+		function join_announcement_preview_parts(parts) {
+			return parts.filter(part => part != null && part !== '').join(' ');
+		}
+
+		function create_location_announcement_input(td, location, field) {
+			const textarea = create_textarea_input("textarea", td, field);
+			textarea.value = location[field] || '';
+			textarea.setAttribute('data-location-id', location._id);
+			textarea.setAttribute('maxlength', 175);
+			textarea.setAttribute('placeholder', 'Optional: {Einzahl/Mehrzahl}');
+			textarea.addEventListener('input', (e) => {
+				update_location_announcement_preview(e.target.parentNode.parentNode, e.target.getAttribute('data-location-id'));
+			});
+			textarea.addEventListener('focusout', (e) => {
+				send_location_to_admin(e.target.parentNode.parentNode, e.target.getAttribute('data-location-id'));
+			});
+			return textarea;
+		}
+
+		function update_location_announcement_preview(parent, location_id) {
+			const preparation_text = parent.querySelector("#preparation_addition").value.trim();
+			const meetingpoint_input = parent.querySelector("#meetingpoint_announcement");
+			const meetingpoint_text = meetingpoint_input.value.trim();
+			const preview = document.querySelector('[data-location-preview="announcement_messages"][data-location-id=' + JSON.stringify(location_id) + ']');
+			if (!preview) {
+				return;
+			}
+			preview.innerHTML = '';
+			const meetingpoint_enabled = !!curt.preparation_meetingpoint_enabled;
+			meetingpoint_input.disabled = !meetingpoint_enabled;
+			meetingpoint_input.parentNode.classList.toggle('location_announcement_disabled', !meetingpoint_enabled);
+			add_location_preview_item(preview, 'Erster Vorbereitungsaufruf', [
+				join_announcement_preview_parts([
+					create_preparation_preview_text(preparation_text, true),
+					'[für Feld 1!]',
+					'Max Mustermann gegen Erika Beispiel!',
+					meetingpoint_enabled ? create_meetingpoint_preview_text(meetingpoint_text, true) : create_preparation_preview_text(preparation_text, true),
+				]),
+			]);
+			if (meetingpoint_enabled) {
+				add_location_preview_item(preview, 'Zweiter Aufruf Spieler', [
+					join_announcement_preview_parts([
+						create_second_preparation_call_preview_text('Max Mustermann', preparation_text, false),
+						'Max Mustermann ' + create_meetingpoint_preview_text(meetingpoint_text, false),
+					]),
+					join_announcement_preview_parts([
+						create_second_preparation_call_preview_text('Max Mustermann / Erika Beispiel', preparation_text, true),
+						'Max Mustermann / Erika Beispiel ' + create_meetingpoint_preview_text(meetingpoint_text, true),
+					]),
+				]);
+				add_location_preview_item(preview, 'Zweiter Aufruf Schiedsrichter / Service Judge', [
+					join_announcement_preview_parts([
+						ci18n('announcements:second_call') + ' ' + ci18n('announcements:preparation') + ' ' + ci18n('announcements:second_call_for') + ':Schiedsrichter Max!',
+						'Schiedsrichter Max ' + create_meetingpoint_preview_text(meetingpoint_text, false),
+					]),
+				]);
+				add_location_preview_item(preview, 'Zweiter Aufruf Tabletbediener', [
+					join_announcement_preview_parts([
+						ci18n('announcements:second_call') + ' ' + ci18n('announcements:preparation') + ' ' + ci18n('announcements:second_call_for') + ':Tabletbediener Max!',
+						create_tablet_meetingpoint_preview_text('Tabletbediener Max', meetingpoint_text, false),
+					]),
+					join_announcement_preview_parts([
+						ci18n('announcements:second_call') + ' ' + ci18n('announcements:preparation') + ' ' + ci18n('announcements:second_call_for') + ':Tabletbediener Max / Tabletbediener Erika!',
+						create_tablet_meetingpoint_preview_text('Tabletbediener Max / Tabletbediener Erika', meetingpoint_text, true),
+					]),
+				]);
+			} else {
+				add_location_preview_item(preview, 'Zweiter Aufruf Spieler', [
+					create_second_preparation_call_preview_text('Max Mustermann', preparation_text, false),
+					create_second_preparation_call_preview_text('Max Mustermann / Erika Beispiel', preparation_text, true),
+				]);
+			}
+		}
+
+		function add_location_preview_item(parent, label, messages) {
+			const item = uiu.el(parent, 'div', 'location_announcement_preview_item');
+			uiu.el(item, 'div', 'location_announcement_preview_label', label);
+			for (const message of messages) {
+				uiu.el(item, 'strong', {}, message);
+			}
+		}
+
+		refresh_location_announcement_previews = function() {
+			uiu.qsEach('.locations_table tr[data-location-id]', function(row) {
+				if (row.querySelector("#preparation_addition") && row.querySelector("#meetingpoint_announcement")) {
+					update_location_announcement_preview(row, row.getAttribute('data-location-id'));
+				}
+			});
+		};
+
 		for (const l of curt.locations) {
-			const tr = uiu.el(locations_tbody, 'tr');
+			const tr = uiu.el(locations_tbody, 'tr', {'data-location-id': l._id});
 			const name_th = uiu.el(tr, 'th', {});
 			uiu.el(name_th, 'div', {}, l.name);
 
@@ -6758,21 +6879,10 @@ var ctournament = (function() {
 			});
 				
 			const preparation_td = uiu.el(tr, 'td', {});
-			const preparation_input = create_textarea_input("textarea", preparation_td, 'preparation_addition');
-			preparation_input.value = l.preparation_addition;
-			preparation_input.setAttribute('data-location-id', l._id);
-			preparation_input.setAttribute('maxlength', 175);
-			preparation_input.addEventListener('focusout', (e) => {
-				send_location_to_admin(e.target.parentNode.parentNode, e.target.getAttribute('data-location-id'));
-			});
+			create_location_announcement_input(preparation_td, l, 'preparation_addition');
+
 			const meetinpoint_td = uiu.el(tr, 'td', {});
-			const meetingpoint_input = create_textarea_input("textarea", meetinpoint_td, 'meetingpoint_announcement');
-			meetingpoint_input.value = l.meetingpoint_announcement;
-			meetingpoint_input.setAttribute('data-location-id', l._id);
-			meetingpoint_input.setAttribute('maxlength', 175);
-			meetingpoint_input.addEventListener('focusout', (e) => {
-				send_location_to_admin(e.target.parentNode.parentNode, e.target.getAttribute('data-location-id'));
-			});
+			create_location_announcement_input(meetinpoint_td, l, 'meetingpoint_announcement');
 			const icon_td = uiu.el(tr, 'td', 'icon_td');
 			uiu.el(icon_td, 'img', {
 				style: 'height: 40px;',
@@ -6819,6 +6929,19 @@ var ctournament = (function() {
 					debug.log('TODO: would now delete court');
 				}
 			});
+
+			const preview_tr = uiu.el(locations_tbody, 'tr', {
+				class: 'location_announcement_preview_row',
+				'data-location-preview-row': l._id,
+			});
+			const preview_td = uiu.el(preview_tr, 'td', {colspan: 5});
+			const announcement_preview = uiu.el(preview_td, 'div', 'location_announcement_preview');
+			uiu.el(announcement_preview, 'div', 'location_announcement_preview_title', 'Aktuell mögliche Durchsagen');
+			uiu.el(announcement_preview, 'div', {
+				'data-location-preview': 'announcement_messages',
+				'data-location-id': l._id,
+			}, '');
+			update_location_announcement_preview(tr, l._id);
 		}
 	}
 

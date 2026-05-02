@@ -1640,7 +1640,9 @@ function integrate_locations(app, tournament_key, btp_state, scoring_formats, ca
 				if (cur_location) {
 
 					//ADD BTP ID
-					app.db.locations.update(alt_query, { $set: { btp_id, name, address, postal_code, city, state, country, preparation_addition, meetingpoint_announcement, short_name} }, {}, (err) => cb(err));
+					res.set(btp_id, cur_location._id);
+					changed = true;
+					app.db.locations.update(alt_query, { $set: { btp_id, name, address, postal_code, city, state, country, short_name} }, {}, (err) => cb(err));
 					return;
 				}
 
@@ -2499,7 +2501,7 @@ function computeOfficialVisibilityPatch(official, refState, tournament = null) {
 	const on_court = should_be_umpire_on_court || should_be_service_judge_on_court;
 	const visible_somewhere = in_active_list || on_court || referenced_somewhere;
 	if (!visible_somewhere) {
-		const now = now_ms(app);
+		const now = Date.now();
 		const reactivated_wait_ts = Math.floor(now / 10);
 		let preferred_role = null;
 		if (official.umpire_wait != null || official.umpire_pause != null || official.umpire_manual_pause != null || official.is_planed_as_umpire || official.umpire_on_court != null) {

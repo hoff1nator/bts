@@ -42,7 +42,7 @@ function announcePreparationMatch(matchSetup) {
         return;
     }
     const field = createFieldPreparationAnnouncement(matchSetup);
-    var preparation = createPreparationAnnouncement(matchSetup);
+    var preparation = createPreparationAnnouncement(matchSetup, true);
     var matchNumber = createMatchNumberAnnouncement(matchSetup);
     var eventName = createEventAnnouncement(matchSetup);
     var round = createRoundAnnouncement(matchSetup);
@@ -52,7 +52,7 @@ function announcePreparationMatch(matchSetup) {
     const tabletOperator = createTabletOperator(matchSetup);
     var lastPart = preparation;
     if (curt.preparation_meetingpoint_enabled) {
-        lastPart = createMeetingPointAnnouncement(matchSetup);
+        lastPart = createMeetingPointAnnouncement(matchSetup, true);
     }
     announce(
         [preparation, field, matchNumber, eventName, round, teams, umpire, serviceJudge, tabletOperator, lastPart],
@@ -141,7 +141,7 @@ function announceSecondPreparationCallTabletoperator(matchSetup) {
         
         var callUs = createSingleTeam(matchSetup.tabletoperators) + ', ' + ci18n('announcements:please_as_tablet_service');
         if (curt.preparation_meetingpoint_enabled) {
-            var meetingPoint = createMeetingPointAnnouncement(matchSetup);
+            var meetingPoint = createMeetingPointAnnouncement(matchSetup, !matchSetup.tabletoperators || matchSetup.tabletoperators.length !== 1);
             meetingPoint = meetingPoint.replace("bitte meldet euch ", "");
             meetingPoint = meetingPoint.replace("Bitte meldet euch ", "");
             meetingPoint = meetingPoint.replace("!", "");
@@ -163,8 +163,7 @@ function announceSecondPreparationCallUmpire(matchSetup) {
         
         var callUs = normalizeNames(matchSetup.umpire.name);
         if (curt.preparation_meetingpoint_enabled) {
-            var meetingPoint = createMeetingPointAnnouncement(matchSetup);
-            meetingPoint = meetingPoint.replace("meldet euch ", "melde dich");
+            var meetingPoint = createMeetingPointAnnouncement(matchSetup, false);
             callUs += ' ' + meetingPoint;
         } else {
             callUs += ' ' + ci18n('announcements:preparation') + '!';
@@ -184,8 +183,7 @@ function announceSecondPreparationCallServiceJudge(matchSetup) {
         
         var callUs = normalizeNames(matchSetup.service_judge.name);
         if (curt.preparation_meetingpoint_enabled) {
-            var meetingPoint = createMeetingPointAnnouncement(matchSetup);
-            meetingPoint = meetingPoint.replace("meldet euch ", "melde dich");
+            var meetingPoint = createMeetingPointAnnouncement(matchSetup, false);
             callUs += ' ' + meetingPoint;
         } else {
             callUs += ' ' + ci18n('announcements:preparation') + '!';
@@ -200,20 +198,17 @@ function announceSecondPreparationCall(matchSetup, team) {
         return;
     }
     var secondCall = createSecondPreparationCallAnnouncement() + createSingleTeam(team.players);
+    const usePlural = team.players.length !== 1;
     if(matchSetup.location_id) {
         const l = utils.find(curt.locations, l => l._id === matchSetup.location_id);
         if(l) {
-            secondCall += ' ' + l.preparation_addition;
+            secondCall += ' ' + resolveSingularPluralAnnouncement(l.preparation_addition, usePlural);
         }
     }
     secondCall += "!";
     var callUs = createSingleTeam(team.players);
     if (curt.preparation_meetingpoint_enabled) {
-        var meetingPoint = createMeetingPointAnnouncement(matchSetup);
-        if(team.players.length == 1)
-        {
-            meetingPoint = meetingPoint.replace("meldet euch", "melde dich");
-        }
+        var meetingPoint = createMeetingPointAnnouncement(matchSetup, usePlural);
         
         callUs += ' ' + meetingPoint;
     }
@@ -385,23 +380,29 @@ function createFieldPreparationAnnouncement(matchSetup) {
 
 }
 
-function createPreparationAnnouncement(matchSetup) {
+function resolveSingularPluralAnnouncement(text, usePlural) {
+    return (text || '').replace(/\{([^{}\/]*)\/([^{}]*)\}/g, function(match, singular, plural) {
+        return usePlural ? plural : singular;
+    });
+}
+
+function createPreparationAnnouncement(matchSetup, usePlural) {
     let addition = "";
     if(matchSetup.location_id) {
         const l = utils.find(curt.locations, l => l._id === matchSetup.location_id);
         if(l) {
-            addition = ' ' + l.preparation_addition;
+            addition = ' ' + resolveSingularPluralAnnouncement(l.preparation_addition, usePlural !== false);
         }
     }
     return ci18n('announcements:preparation') + addition;
 }
 
-function createMeetingPointAnnouncement(matchSetup) {
+function createMeetingPointAnnouncement(matchSetup, usePlural) {
     let result = ci18n('announcements:meetingpoint');
     if(matchSetup.location_id) {
         const l = utils.find(curt.locations, l => l._id === matchSetup.location_id);
         if(l) {
-            result = l.meetingpoint_announcement;
+            result = resolveSingularPluralAnnouncement(l.meetingpoint_announcement, usePlural !== false);
         }
     }
     

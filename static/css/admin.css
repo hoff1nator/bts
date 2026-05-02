@@ -1321,6 +1321,46 @@ h2.edit {
 	height: 5.0em;
 }
 
+.location_announcement_preview{
+	margin: 0.25em 0 0.75em;
+	padding: 0.4em 0.55em;
+	background: rgba(255, 255, 255, 0.55);
+	border-radius: 4px;
+	font-size: 0.9em;
+	line-height: 1.35;
+}
+
+.location_announcement_preview_row td{
+	padding: 0 0.5em 0.5em;
+}
+
+.location_announcement_preview strong{
+	display: block;
+	font-weight: 600;
+}
+
+.location_announcement_preview_title{
+	font-weight: 700;
+	margin-bottom: 0.25em;
+}
+
+.location_announcement_preview_item{
+	margin-top: 0.45em;
+}
+
+.location_announcement_preview_label{
+	color: #555;
+	font-size: 0.9em;
+}
+
+.location_announcement_disabled{
+	opacity: 0.55;
+}
+
+.location_announcement_disabled textarea{
+	cursor: not-allowed;
+}
+
 .courts_table{
 	text-align: center;
 }
