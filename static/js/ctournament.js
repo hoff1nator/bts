@@ -2768,7 +2768,40 @@ var ctournament = (function() {
 				if (!curt['btp_autofetch_timeout_intervall']) {
 					curt['btp_autofetch_timeout_intervall'] = 30000;
 				}
-				input.btp_autofetch_timeout_intervall = create_input(curt, "number", btp_connection_div, 'btp_autofetch_timeout_intervall')
+				const btp_autofetch_timeout_to_seconds = function(ms) {
+					const seconds = Number(ms || 30000) / 1000;
+					if (!Number.isFinite(seconds) || seconds <= 0) {
+						return '30';
+					}
+					if (Number.isInteger(seconds)) {
+						return String(seconds);
+					}
+					return String(Math.round(seconds * 1000) / 1000).replace(/\.?0+$/, '');
+				};
+				const btp_autofetch_timeout_label = uiu.el(btp_connection_div, 'label');
+				uiu.el(btp_autofetch_timeout_label, 'span', {}, ci18n('tournament:edit:btp_autofetch_timeout_intervall'));
+				input.btp_autofetch_timeout_intervall = uiu.el(btp_autofetch_timeout_label, 'input', {
+					type: 'number',
+					name: 'btp_autofetch_timeout_intervall',
+					min: '1',
+					step: '1',
+					value: btp_autofetch_timeout_to_seconds(curt.btp_autofetch_timeout_intervall),
+				});
+				bind_live_prop(input.btp_autofetch_timeout_intervall, 'btp_autofetch_timeout_intervall', {
+					get_value: function(input_el) {
+						const seconds = Number(input_el.value);
+						if (!Number.isFinite(seconds) || seconds <= 0) {
+							return 30000;
+						}
+						return Math.round(seconds * 1000);
+					},
+					on_error: function(input_el, old_value) {
+						input_el.value = btp_autofetch_timeout_to_seconds(old_value);
+					},
+					on_success: function(input_el, value) {
+						input_el.value = btp_autofetch_timeout_to_seconds(value);
+					},
+				});
 
 				input.btp_readonly = uiu.el(btp_readonly_label, 'input', bro_attrs);
 				uiu.el(btp_readonly_label, 'span', {}, ci18n('tournament:edit:btp:readonly'));

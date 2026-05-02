@@ -171,7 +171,7 @@ var ci18n_nl = Object.assign(
 	'tournament:edit:warmup_start': 'Wedstrijd start na seconden:',
 	'tournament:edit:btp:enabled': 'Activeer BTP-synchronisatie',
 	'tournament:edit:btp:autofetch_enabled': 'Automatische synchronisatie',
-	'tournament:edit:btp_autofetch_timeout_intervall': 'Synchronisatie-interval (ms)',
+	'tournament:edit:btp_autofetch_timeout_intervall': 'Synchronisatie-interval (s)',
 	'tournament:edit:btp:readonly': 'Alleen lezen',
 	'tournament:edit:btp:ip': 'IP-adres:',
 	'tournament:edit:btp:password': 'BTP-wachtwoord:',
