@@ -13,6 +13,7 @@ const debug_flags = require('./debug_flags');
 const match_automation = require('./match_automation');
 const ticker_manager = require('./ticker_manager');
 const update_queue = require('./update_queue');
+const displaysettings_defaults = require('./displaysettings_defaults');
 
 const all_panels = [];
 const active_umpire_match_owners = new Map();
@@ -1704,10 +1705,11 @@ async function get_effective_display_state_inputs(app, tournament_key, ws, msg) 
 	const panel_devicemode = normalize_panel_devicemode(
 		msg?.panel_settings?.devicemode || ws?.panel_devicemode || 'display'
 	);
-	const tournament = await find_one_async(app.db.tournaments, { key: tournament_key });
+	let tournament = await find_one_async(app.db.tournaments, { key: tournament_key });
 	if (!tournament) {
 		throw new Error('No tournament ' + tournament_key);
 	}
+	({ tournament } = await displaysettings_defaults.ensure_default_displaysettings(app, tournament));
 	remember_v2_tournament_settings(ws, tournament);
 	const display_court_displaysetting = await ensure_panel_court_displaysettings(
 		app,

@@ -58,6 +58,28 @@ function get_displays(app, tournament, callback) {
 		display_court_displaysettings = display_court_displaysettings.filter(function (obj) {
 			return obj.client_id !== 'deleted';
 		});
+		const by_client_id = new Map();
+		display_court_displaysettings.forEach(function (display) {
+			const existing = by_client_id.get(display.client_id);
+			if (!existing) {
+				by_client_id.set(display.client_id, display);
+				return;
+			}
+			// Keep one row per physical client; prefer the row with the most complete assignment data.
+			Object.assign(existing, {
+				hostname: display.hostname || existing.hostname,
+				court_id: display.court_id != null ? display.court_id : existing.court_id,
+				displaysetting_id: display.displaysetting_id || existing.displaysetting_id,
+				panel_devicemode: display.panel_devicemode || existing.panel_devicemode,
+				battery: display.battery || existing.battery,
+			});
+			if (display._id && display._id !== existing._id) {
+				app.db.display_court_displaysettings.remove({ _id: display._id }, {}, () => {});
+				const { _id, ...persisted_existing } = existing;
+				app.db.display_court_displaysettings.update({ _id }, { $set: persisted_existing }, {}, () => {});
+			}
+		});
+		display_court_displaysettings = Array.from(by_client_id.values());
 
 		const bupws = require('./bupws');
 		bupws.add_display_status(app, tournament, display_court_displaysettings, function (display_court_displaysettings) {

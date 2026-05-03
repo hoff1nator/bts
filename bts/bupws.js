@@ -17,6 +17,7 @@ const ticker_manager = require('./ticker_manager');
 const update_queue = require('./update_queue');
 const match_automation = require('./match_automation');
 const stournament = require('./stournament');
+const displaysettings_defaults = require('./displaysettings_defaults');
 const all_panels = [];
 
 const default_tournament_key = 'default';
@@ -960,10 +961,11 @@ function get_display_court_displaysettings(app, client_id) {
 }
 async function get_display_setting(app, tkey, client_id, court_id, displaysetting, panel_devicemode = 'display', hostname = null) {
 	const normalized_panel_devicemode = normalize_panel_devicemode(panel_devicemode);
-	const tournament = await app.db.tournaments.findOne_async({ key: tkey });
+	let tournament = await app.db.tournaments.findOne_async({ key: tkey });
 	if (!tournament) {
 		throw new Error('No tournament ' + tkey);
 	}
+	({ tournament } = await displaysettings_defaults.ensure_default_displaysettings(app, tournament));
 
 	let display_court_displaysetting = await get_display_court_displaysettings(app, client_id);
 	let current_displaysetting = null;

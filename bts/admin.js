@@ -14,6 +14,7 @@ const ticker_manager = require('./ticker_manager');
 const utils = require('./utils');
 const match_automation = require('./match_automation');
 const debug_flags = require('./debug_flags');
+const displaysettings_defaults = require('./displaysettings_defaults');
 
 function now_ms(app) {
 	return app?.clock ? app.clock.now_ms() : Date.now();
@@ -754,88 +755,82 @@ function handle_tournament_get(app, ws, msg) {
 			return;
 		}
 		tournament.certificate_exports = tournament.certificate_exports || {};
-		async.parallel([
-		function (cb) { 
-			try {
-				const qrcode = require('qrcode');
-				
-				const url = generate_tournament_web_url(tournament);
-				qrcode.toDataURL(url, function (error, data) {
-					const qrCodeDataUrl = data;
-					tournament.mainQrCode = qrCodeDataUrl;
-					cb(error);
-				});
-			} catch (error)
-			{ }
-		},
-		function(cb) {
-			stournament.get_locations(app.db, tournament.key, function(err, locations) {
-
-				tournament.locations = locations;
-				cb(err);
-			});
-		}, function(cb) {
-			stournament.get_courts(app.db, tournament.key, function(err, courts) {
-				tournament.courts = courts;
-				cb(err);
-			});
-		}, function(cb) {
-			stournament.get_umpires(app.db, tournament.key, function(err, umpires) {
-				tournament.umpires = umpires;
-				cb(err);
-			});
-		}, function (cb) {
-			stournament.get_tabletoperators(app.db, tournament.key, function (err, tabletoperators) {
-				tournament.tabletoperators = tabletoperators;
-				cb(err);
-			});
-		}, function(cb) {
-			stournament.get_matches(app.db, tournament.key, function(err, matches) {
-				tournament.matches = matches;
-				cb(err);
-			});
-		}, function (cb) {
-			stournament.get_displays(app, tournament, function (err, displays) {
-				tournament.displays = displays;
-				cb(err);
-			});
-		}, function (cb) {
-			stournament.get_normalizations(app.db, tournament.key, function (err, normalizations) {
-				tournament.normalizations = normalizations;
-				cb(err);
-			});
-		}, function (cb) {
-			stournament.get_advertisements(app.db, tournament.key, function (err, advertisements) {
-				tournament.advertisements = advertisements;
-				cb(err);
-			});
-		}, function (cb) {
-			stournament.get_displaysettings(app.db, tournament.key, function (err, displaysettings) {
+		displaysettings_defaults.ensure_default_displaysettings(app, tournament)
+			.then(({ tournament: ensured_tournament, displaysettings }) => {
+				tournament = ensured_tournament;
 				tournament.displaysettings = displaysettings;
-				cb(err);
-			});
-		}], function(err) {
-			const default_patch = _ensure_tournament_displaysetting_defaults(tournament);
-			Object.assign(tournament, default_patch);
-			if (tournament.scoring_formats && Array.isArray(tournament.scoring_formats.formats)) {
-				const btp_sync = require('./btp_sync');
-				tournament.scoring_formats = {
-					...tournament.scoring_formats,
-					formats: tournament.scoring_formats.formats.map(f => btp_sync._sanitize_scoring_format(f)),
-				};
-			}
-			tournament.btp_status = btp_manager.get_status(tournament.key);
-			tournament.ticker_status = ticker_manager.get_status(tournament.key);
-			tournament.test_clock = _clock_state_response(app);
-			_annotate_tournament(tournament);
-			if (Object.keys(default_patch).length === 0) {
-				ws.respond(msg, err, {tournament});
-				return;
-			}
-			app.db.tournaments.update({ key: tournament.key }, { $set: default_patch }, {}, (updateErr) => {
-				ws.respond(msg, err || updateErr, {tournament});
-			});
-		});
+				async.parallel([
+					function (cb) {
+						try {
+							const qrcode = require('qrcode');
+
+							const url = generate_tournament_web_url(tournament);
+							qrcode.toDataURL(url, function (error, data) {
+								const qrCodeDataUrl = data;
+								tournament.mainQrCode = qrCodeDataUrl;
+								cb(error);
+							});
+						} catch (error) {
+							cb(error);
+						}
+					},
+					function(cb) {
+						stournament.get_locations(app.db, tournament.key, function(err, locations) {
+							tournament.locations = locations;
+							cb(err);
+						});
+					}, function(cb) {
+						stournament.get_courts(app.db, tournament.key, function(err, courts) {
+							tournament.courts = courts;
+							cb(err);
+						});
+					}, function(cb) {
+						stournament.get_umpires(app.db, tournament.key, function(err, umpires) {
+							tournament.umpires = umpires;
+							cb(err);
+						});
+					}, function (cb) {
+						stournament.get_tabletoperators(app.db, tournament.key, function (err, tabletoperators) {
+							tournament.tabletoperators = tabletoperators;
+							cb(err);
+						});
+					}, function(cb) {
+						stournament.get_matches(app.db, tournament.key, function(err, matches) {
+							tournament.matches = matches;
+							cb(err);
+						});
+					}, function (cb) {
+						stournament.get_displays(app, tournament, function (err, displays) {
+							tournament.displays = displays;
+							cb(err);
+						});
+					}, function (cb) {
+						stournament.get_normalizations(app.db, tournament.key, function (err, normalizations) {
+							tournament.normalizations = normalizations;
+							cb(err);
+						});
+					}, function (cb) {
+						stournament.get_advertisements(app.db, tournament.key, function (err, advertisements) {
+							tournament.advertisements = advertisements;
+							cb(err);
+						});
+					}
+				], function(err) {
+					if (tournament.scoring_formats && Array.isArray(tournament.scoring_formats.formats)) {
+						const btp_sync = require('./btp_sync');
+						tournament.scoring_formats = {
+							...tournament.scoring_formats,
+							formats: tournament.scoring_formats.formats.map(f => btp_sync._sanitize_scoring_format(f)),
+						};
+					}
+					tournament.btp_status = btp_manager.get_status(tournament.key);
+					tournament.ticker_status = ticker_manager.get_status(tournament.key);
+					tournament.test_clock = _clock_state_response(app);
+					_annotate_tournament(tournament);
+					ws.respond(msg, err, {tournament});
+				});
+			})
+			.catch((ensureErr) => ws.respond(msg, ensureErr));
 	});
 }
 

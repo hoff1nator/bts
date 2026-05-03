@@ -630,6 +630,17 @@ function default_handler(rerender, special_funcs) {
 			break;
 		case 'display_status_changed':
 			const display_setting = c.val.display_court_displaysetting;
+			let display_seen = false;
+			curt.displays = curt.displays.filter((m) => {
+				if (m.client_id !== display_setting.client_id) {
+					return true;
+				}
+				if (!display_seen) {
+					display_seen = true;
+					return true;
+				}
+				return false;
+			});
 			var d = utils.find(curt.displays, m => m.client_id === display_setting.client_id);
 			const last_d = {...d};
 			if (!d) {

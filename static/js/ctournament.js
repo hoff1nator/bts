@@ -6606,7 +6606,12 @@ var ctournament = (function() {
 		uiu.el(tr, 'th', {}, "");
 		
 
+		const rendered_display_ids = new Set();
 		for (const display of curt.displays) {
+			if (rendered_display_ids.has(display.client_id)) {
+				continue;
+			}
+			rendered_display_ids.add(display.client_id);
 			const tr = uiu.el(display_tbody, 'tr', { 'data-display_id': display.client_id });
 			render_display(tr, display);
 		}
@@ -6620,6 +6625,9 @@ var ctournament = (function() {
 		
 		var nodes = document.querySelectorAll('[data-display_id=' + JSON.stringify(display.client_id) + ']');
 		if(nodes.length > 0) {
+			for (let i = 1; i < nodes.length; i++) {
+				uiu.remove(nodes[i]);
+			}
 			uiu.qsEach('[data-display_id=' + JSON.stringify(display.client_id) + ']', function (display_tr) {
 				display_tr.innerHTML = '';
 				render_display(display_tr, display);
