@@ -674,28 +674,49 @@ function mergeLocalMatchIntoBtpMatch(current_match, match) {
 		match.setup.tabletoperators = current_match.setup.tabletoperators;
 	}
 
-	for (let team_index = 0; team_index < Math.min(current_match.setup.teams.length, match.setup.teams.length); team_index++) {
-		for (let player_index = 0; player_index < Math.min(current_match.setup.teams[team_index].players.length, match.setup.teams[team_index].players.length); player_index++) {
-			if (current_match.setup.teams[team_index].players[player_index].now_playing_on_court != undefined) {
-				match.setup.teams[team_index].players[player_index].now_playing_on_court = current_match.setup.teams[team_index].players[player_index].now_playing_on_court;
+	for (const current_team of (current_match.setup.teams || [])) {
+		for (const current_player of (current_team.players || [])) {
+			if (!current_player?.btp_id) {
+				continue;
+			}
+			const next_player = find_setup_player_by_btp_id(match.setup, current_player.btp_id);
+			if (!next_player) {
+				continue;
 			}
 
-			if (current_match.setup.teams[team_index].players[player_index].now_tablet_on_court != undefined) {
-				match.setup.teams[team_index].players[player_index].now_tablet_on_court = current_match.setup.teams[team_index].players[player_index].now_tablet_on_court;
+			if (current_player.now_playing_on_court != undefined) {
+				next_player.now_playing_on_court = current_player.now_playing_on_court;
 			}
 
-			if (current_match.setup.teams[team_index].players[player_index].tablet_break_active != undefined) {
-				match.setup.teams[team_index].players[player_index].tablet_break_active = current_match.setup.teams[team_index].players[player_index].tablet_break_active;
+			if (current_player.now_tablet_on_court != undefined) {
+				next_player.now_tablet_on_court = current_player.now_tablet_on_court;
 			}
 
-			if (current_match.btp_needsync === true &&
-				current_match.setup.teams[team_index].players[player_index].checked_in != undefined) {
-				match.setup.teams[team_index].players[player_index].checked_in = current_match.setup.teams[team_index].players[player_index].checked_in;
+			if (current_player.tablet_break_active != undefined) {
+				next_player.tablet_break_active = current_player.tablet_break_active;
+			}
+
+			if (current_match.btp_needsync === true && current_player.checked_in != undefined) {
+				next_player.checked_in = current_player.checked_in;
 			}
 		}
 	}
 
 	return match;
+}
+
+function find_setup_player_by_btp_id(setup, btp_id) {
+	if (!setup || btp_id == null) {
+		return null;
+	}
+	for (const team of (setup.teams || [])) {
+		for (const player of (team?.players || [])) {
+			if (String(player?.btp_id) === String(btp_id)) {
+				return player;
+			}
+		}
+	}
+	return null;
 }
 
 function _craft_team(par) {
@@ -1149,29 +1170,31 @@ async function integrate_matches(app, tkey, btp_state, scoring_formats, location
 
 						match = mergeLocalMatchIntoBtpMatch(current_match, match);
 
-						for (let team_index = 0; team_index < Math.min(current_match.setup.teams.length, match.setup.teams.length); team_index++) {
-							for (let player_index = 0; player_index < Math.min(current_match.setup.teams[team_index].players.length, match.setup.teams[team_index].players.length); player_index++) {
-								const current_player = current_match.setup.teams[team_index].players[player_index];
-								const next_player = match.setup.teams[team_index].players[player_index];
+						for (const current_team of (current_match.setup.teams || [])) {
+							for (const current_player of (current_team.players || [])) {
+								if (!current_player?.btp_id) {
+									continue;
+								}
+								const next_player = find_setup_player_by_btp_id(match.setup, current_player.btp_id);
+								if (!next_player || (!current_player.last_time_on_court_ts && !next_player.last_time_on_court_ts)) {
+									continue;
+								}
+								const current_ts = current_player.last_time_on_court_ts || 0;
+								const next_ts = next_player.last_time_on_court_ts || 0;
+								const max_ts = Math.max(current_ts, next_ts);
+								current_player.last_time_on_court_ts = max_ts;
+								next_player.last_time_on_court_ts = max_ts;
 
-								if (current_player.last_time_on_court_ts || next_player.last_time_on_court_ts) {
-									const current_ts = current_player.last_time_on_court_ts || 0;
-									const next_ts = next_player.last_time_on_court_ts || 0;
-									const max_ts = Math.max(current_ts, next_ts);
-									current_player.last_time_on_court_ts = max_ts;
-									next_player.last_time_on_court_ts = max_ts;
-
-									if (_is_pause_debug_player(current_player) || _is_pause_debug_player(next_player)) {
-										_log_pause_debug('merge_match_player_pause', {
-											match_id: current_match._id,
-											btp_match_id: current_match.btp_id || match.btp_id || null,
-											player: `${(next_player.firstname || current_player.firstname || '').trim()} ${(next_player.lastname || current_player.lastname || '').trim()}`.trim(),
-											btp_id: next_player.btp_id || current_player.btp_id || null,
-											current_ts,
-											next_ts,
-											merged_ts: max_ts,
-										});
-									}
+								if (_is_pause_debug_player(current_player) || _is_pause_debug_player(next_player)) {
+									_log_pause_debug('merge_match_player_pause', {
+										match_id: current_match._id,
+										btp_match_id: current_match.btp_id || match.btp_id || null,
+										player: `${(next_player.firstname || current_player.firstname || '').trim()} ${(next_player.lastname || current_player.lastname || '').trim()}`.trim(),
+										btp_id: next_player.btp_id || current_player.btp_id || null,
+										current_ts,
+										next_ts,
+										merged_ts: max_ts,
+									});
 								}
 							}
 						}
@@ -1198,10 +1221,14 @@ async function integrate_matches(app, tkey, btp_state, scoring_formats, location
 							}
 						}
 
-						for (let team_index = 0; team_index < Math.min(current_match.setup.teams.length, match.setup.teams.length); team_index++) {
-							for (let player_index = 0; player_index < Math.min(current_match.setup.teams[team_index].players.length, match.setup.teams[team_index].players.length); player_index++) {
-								if ('tablet_break_active' in current_match.setup.teams[team_index].players[player_index]) {
-									match.setup.teams[team_index].players[player_index].tablet_break_active = current_match.setup.teams[team_index].players[player_index].tablet_break_active;
+						for (const current_team of (current_match.setup.teams || [])) {
+							for (const current_player of (current_team.players || [])) {
+								if (!current_player?.btp_id || !('tablet_break_active' in current_player)) {
+									continue;
+								}
+								const next_player = find_setup_player_by_btp_id(match.setup, current_player.btp_id);
+								if (next_player) {
+									next_player.tablet_break_active = current_player.tablet_break_active;
 								}
 							}
 						}
@@ -2238,9 +2265,11 @@ async function integrate_player_state(app, tkey, btp_state, callback) {
 			async.eachOfSeries(btp_state.matches, async (match, key) => {
 				let cur_match = await get_match_form_db(app, tkey, btp_state, match);
 				if (cur_match && cur_match != null) {
-					for (let team_nr = 0; team_nr < cur_match.setup.teams.length; team_nr++) {
-						for (let player_nr = 0; player_nr < cur_match.setup.teams[team_nr].players.length; player_nr++) {
-							let id = pause_is_done(match, team_nr, player_nr, tournament.btp_settings, now_ms(app));
+					for (let team_nr = 0; team_nr < (match.bts_players || []).length; team_nr++) {
+						for (let player_nr = 0; player_nr < (match.bts_players[team_nr] || []).length; player_nr++) {
+							const btp_player_id = match.bts_players?.[team_nr]?.[player_nr]?.ID?.[0] || null;
+							const local_player = find_setup_player_by_btp_id(cur_match.setup, btp_player_id);
+							let id = pause_is_done(match, team_nr, player_nr, tournament.btp_settings, now_ms(app), local_player);
 
 							if (id != undefined && id != null) {
 
@@ -2289,15 +2318,30 @@ function normalize_match_player_pause_state(app, tkey, callback) {
 		const canonical_last_time_by_btp_id = new Map();
 
 		for (const match of matches) {
+			const is_authoritative_pause_source =
+				match?.end_ts ||
+				typeof match?.team1_won === 'boolean' ||
+				match?.btp_winner ||
+				match?.btp_needsync;
 			const teams = match?.setup?.teams || [];
 			for (const team of teams) {
 				for (const player of (team?.players || [])) {
-					if (!player?.btp_id || !player.last_time_on_court_ts) {
+					if (!player?.btp_id) {
+						continue;
+					}
+					const player_has_active_tablet_break = player.tablet_break_active === true && player.last_time_on_court_ts;
+					if (!is_authoritative_pause_source && !player_has_active_tablet_break) {
+						continue;
+					}
+					const candidate_ts = player_has_active_tablet_break
+						? player.last_time_on_court_ts
+						: (match.end_ts || player.last_time_on_court_ts);
+					if (!candidate_ts) {
 						continue;
 					}
 					const previous = canonical_last_time_by_btp_id.get(player.btp_id) || 0;
-					if (player.last_time_on_court_ts > previous) {
-						canonical_last_time_by_btp_id.set(player.btp_id, player.last_time_on_court_ts);
+					if (candidate_ts > previous) {
+						canonical_last_time_by_btp_id.set(player.btp_id, candidate_ts);
 					}
 				}
 			}
@@ -2382,17 +2426,18 @@ async function get_match_form_db(app, tkey, btp_state, match) {
 	});
 }
 
-function pause_is_done(match, team_nr, player_nr, btp_settings, current_now_ms) {
+function pause_is_done(match, team_nr, player_nr, btp_settings, current_now_ms, local_player = null) {
 	current_now_ms = resolve_current_now_ms(current_now_ms);
 	if (match.bts_players && match.bts_players.length > team_nr) {
 		if (match.bts_players[team_nr] && match.bts_players[team_nr].length > player_nr) {
 			const player = match.bts_players[team_nr][player_nr];
 
-			if (player.CheckedIn[0]) {
+			if (player.CheckedIn[0] || local_player?.checked_in === true) {
 				return;
 			}
 
-			if (player.LastTimeOnCourt && player.LastTimeOnCourt[0]) {
+			let last_time_on_court_ts = local_player?.last_time_on_court_ts || null;
+			if (!last_time_on_court_ts && player.LastTimeOnCourt && player.LastTimeOnCourt[0]) {
 				const date = new Date(player.LastTimeOnCourt[0].year,
 					player.LastTimeOnCourt[0].month - 1,
 					player.LastTimeOnCourt[0].day,
@@ -2400,7 +2445,10 @@ function pause_is_done(match, team_nr, player_nr, btp_settings, current_now_ms) 
 					player.LastTimeOnCourt[0].minute,
 					player.LastTimeOnCourt[0].second,
 					player.LastTimeOnCourt[0].ms);
-				const last_time_on_court_ts = date.getTime();
+				last_time_on_court_ts = date.getTime();
+			}
+
+			if (last_time_on_court_ts) {
 				if ((current_now_ms - last_time_on_court_ts) > btp_settings.pause_duration_ms) {
 					return player.ID[0];
 				}
