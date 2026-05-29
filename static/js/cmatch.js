@@ -2100,18 +2100,75 @@ function get_preparation_frontier_match_ids() {
 	return result;
 }
 
+function get_preparation_demand_court_ids() {
+	const result = new Set();
+	const selections_by_location_id = (curt && curt.location_preparation_selection_by_location_id) || {};
+	for (const selection of Object.values(selections_by_location_id)) {
+		const court_ids = (selection && selection.demand_court_ids) || [];
+		for (const court_id of court_ids) {
+			if (court_id != null) {
+				result.add(String(court_id));
+			}
+		}
+	}
+	return result;
+}
+
+function update_preparation_demand_court_markers() {
+	const demand_court_ids = get_preparation_demand_court_ids();
+	uiu.qsEach('.court_row[data-court_id]', (row) => {
+		const court_id = row.getAttribute('data-court_id');
+		if (demand_court_ids.has(String(court_id))) {
+			row.classList.add('preparation_demand_court');
+			row.setAttribute('data-preparation-demand-court', 'true');
+		} else {
+			row.classList.remove('preparation_demand_court');
+			row.removeAttribute('data-preparation-demand-court');
+		}
+	});
+}
+
 function get_preparation_frontier_debug_entries() {
 	const selections_by_location_id = (curt && curt.location_preparation_selection_by_location_id) || {};
 	const locations_by_id = new Map((curt && curt.locations || []).map((location) => [String(location._id), location]));
+	const courts_by_id = new Map((curt && curt.courts || []).map((court) => [String(court._id), court]));
+	const format_match_nums = (nums) => {
+		const values = (Array.isArray(nums) ? nums : []).filter((num) => num != null);
+		return values.length ? values.map((num) => '#' + num).join(', ') : '-';
+	};
+	const format_court_ids = (court_ids) => {
+		const values = (Array.isArray(court_ids) ? court_ids : [])
+			.map((court_id) => {
+				const court = courts_by_id.get(String(court_id));
+				return court && court.num != null ? String(court.num) : String(court_id);
+			});
+		return values.length ? values.join(', ') : '-';
+	};
 	return Object.entries(selections_by_location_id)
 		.map(([location_id, selection]) => {
 			const location = locations_by_id.get(String(location_id));
 			const location_name = location ? (location.name || location.short_name || ('Standort ' + location_id)) : ('Standort ' + location_id);
 			const frontier_match_num = selection && selection.display_frontier_match_num;
+			const required = selection && selection.required_preparation_count != null ? selection.required_preparation_count : 0;
+			const current = selection && selection.current_preparation_count != null ? selection.current_preparation_count : 0;
+			const missing = selection && selection.missing_preparation_count != null ? selection.missing_preparation_count : 0;
+			const auto_required = selection && selection.effective_required_preparation_count != null ? selection.effective_required_preparation_count : 0;
+			const auto_missing = selection && selection.effective_missing_preparation_count != null ? selection.effective_missing_preparation_count : 0;
 			return {
 				location_id: String(location_id),
 				location_name,
-				frontier_match_num: frontier_match_num != null ? frontier_match_num : null,
+				text: location_name
+					+ ': Bedarf ' + current + '/' + required
+					+ ', fehlt ' + missing
+					+ ', Auto ' + auto_missing + '/' + auto_required
+					+ ', gruen Felder ' + format_court_ids(selection && selection.demand_court_ids)
+					+ ' (Nachfolger ' + format_court_ids(selection && selection.successor_court_ids)
+					+ ', frei ' + format_court_ids(selection && selection.free_court_ids) + ')'
+					+ ', Frontier ' + (frontier_match_num != null ? ('#' + frontier_match_num) : 'keine')
+					+ ', Grenze ' + (selection && selection.display_cutoff_match_num != null ? ('#' + selection.display_cutoff_match_num) : '-')
+					+ ', Kandidaten ' + format_match_nums(selection && selection.display_candidate_match_nums)
+					+ ', Auswahl ' + format_match_nums(selection && selection.selected_match_nums)
+					+ ', Auto-Auswahl ' + format_match_nums(selection && selection.auto_selected_match_nums),
 			};
 		})
 		.sort((a, b) => a.location_name.localeCompare(b.location_name, 'de'));
@@ -2128,10 +2185,9 @@ function render_unassigned(container) {
 	const frontier_debug_entries = preparation_call_debug_output_enabled() ? get_preparation_frontier_debug_entries() : [];
 	if (frontier_debug_entries.length) {
 		const debug_container = uiu.el(container, 'div', 'preparation_frontier_debug');
-		uiu.el(debug_container, 'span', 'preparation_frontier_debug_label', 'Frontier-Debug:');
+		uiu.el(debug_container, 'span', 'preparation_frontier_debug_label', 'Vorbereitungs-Debug:');
 		frontier_debug_entries.forEach((entry) => {
-			const text = entry.location_name + ': Frontier ' + (entry.frontier_match_num != null ? ('#' + entry.frontier_match_num) : 'keines');
-			uiu.el(debug_container, 'span', 'preparation_frontier_debug_entry', text);
+			uiu.el(debug_container, 'span', 'preparation_frontier_debug_entry', entry.text);
 		});
 	}
 
@@ -2325,6 +2381,10 @@ function render_courts(container, style) {
 		const court_matches = curt.matches.filter(m => calc_section(m) === expected_section);
 
 		const tr = uiu.el(tbody, 'tr', {class:"court_row", "data-court_id":c._id, "data-location_id":c.location_id} );
+		if (get_preparation_demand_court_ids().has(String(c._id))) {
+			tr.classList.add('preparation_demand_court');
+			tr.setAttribute('data-preparation-demand-court', 'true');
+		}
 		const rowspan = Math.max(1, court_matches.length);
 		//uiu.el(tr, 'th', {
 		//	'class': 'court_num',
@@ -2355,6 +2415,7 @@ function render_courts(container, style) {
 	if(style === 'public') {
 		resize_table(resizable_rows, 0.98);
 	}
+	update_preparation_demand_court_markers();
 }
 
 function update_tables(location_id, enabled) {
@@ -3315,6 +3376,7 @@ return {
 	render_finished,
 	render_unassigned,
 	render_courts,
+	update_preparation_demand_court_markers,
 	render_umpire_options,
 	render_upcoming_matches,
 	update_court,

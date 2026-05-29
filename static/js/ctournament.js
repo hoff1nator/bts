@@ -1223,6 +1223,9 @@ var ctournament = (function() {
 			uiu.qsEach('.unassigned_container', (unassigned_container) => {
 				cmatch.render_unassigned(unassigned_container);
 			});
+			if (typeof cmatch.update_preparation_demand_court_markers === 'function') {
+				cmatch.update_preparation_demand_court_markers();
+			}
 			if (preparation_selection_request_pending) {
 				preparation_selection_request_pending = false;
 				request_location_preparation_selections();
@@ -3012,7 +3015,7 @@ var ctournament = (function() {
 					name: 'preparation_call_debug_output_enabled',
 					checked: curt.preparation_call_debug_output_enabled ? 'checked' : undefined,
 				});
-				uiu.el(debug_output_label, 'span', {}, 'Debug-Ausgabe fuer Aufrufgrenze');
+				uiu.el(debug_output_label, 'span', {}, 'Debug-Ausgabe fuer Vorbereitungsauswahl');
 				bind_live_prop(input.preparation_call_debug_output_enabled, 'preparation_call_debug_output_enabled', {
 					on_success: function() {
 						uiu.qsEach('.unassigned_container', function(unassigned_container) {

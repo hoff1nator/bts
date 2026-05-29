@@ -214,17 +214,28 @@ function calculate_location_preparation_need(tournament, location_id) {
 			.map((match) => match.setup.court_id)
 	);
 
-	const successor_need_count = matches.filter((match) => {
+	const successor_matches = matches.filter((match) => {
 		const setup = match && match.setup;
 		if (!setup || !setup.now_on_court || !setup.needs_preparation_successor) {
 			return false;
 		}
 		return active_location_court_ids.has(setup.court_id);
-	}).length;
+	});
+	const successor_court_ids = [...new Set(
+		successor_matches
+			.map((match) => match?.setup?.court_id)
+			.filter((court_id) => court_id != null)
+	)];
+	const successor_match_ids = successor_matches
+		.map((match) => match?._id)
+		.filter((match_id) => match_id != null);
 
-	const free_court_count = active_location_courts.filter((court) => {
-		return !occupied_court_ids.has(court._id);
-	}).length;
+	const free_court_ids = active_location_courts
+		.filter((court) => !occupied_court_ids.has(court._id))
+		.map((court) => court._id)
+		.filter((court_id) => court_id != null);
+	const successor_need_count = successor_matches.length;
+	const free_court_count = free_court_ids.length;
 	const active_court_count = active_location_courts.length;
 	const required_preparation_count = Math.min(active_court_count, successor_need_count + free_court_count);
 
@@ -234,6 +245,10 @@ function calculate_location_preparation_need(tournament, location_id) {
 		successor_need_count,
 		free_court_count,
 		required_preparation_count,
+		successor_court_ids,
+		successor_match_ids,
+		free_court_ids,
+		demand_court_ids: [...new Set([...successor_court_ids, ...free_court_ids])],
 	};
 }
 
@@ -864,29 +879,48 @@ function get_frontier_block_key(match) {
 	return `${normalize_frontier_block_event_name(setup.event_name)}|${setup.phase_block_key || 'UNKNOWN'}`;
 }
 
-function build_frontier_block_sequence(matches) {
-	const block_sequence = [];
+function build_frontier_block_positions(matches) {
+	const positions = [];
 	let last_block_key = null;
+	let block_index = -1;
 	matches.forEach((match) => {
 		const block_key = get_frontier_block_key(match);
 		if (block_key !== last_block_key) {
-			block_sequence.push(block_key);
+			block_index += 1;
 			last_block_key = block_key;
 		}
+		positions.push({
+			match,
+			match_id: match?._id,
+			block_key,
+			block_index,
+		});
 	});
-	return block_sequence;
+	return positions;
+}
+
+function find_frontier_block_position(match, positions) {
+	if (!match) {
+		return null;
+	}
+	const by_identity = positions.find((position) => position.match === match);
+	if (by_identity) {
+		return by_identity;
+	}
+	if (match._id == null) {
+		return null;
+	}
+	return positions.find((position) => position.match_id === match._id) || null;
 }
 
 function get_frontier_block_distance(match, frontier, relevant_matches) {
-	const sequence = build_frontier_block_sequence(relevant_matches);
-	const match_key = get_frontier_block_key(match);
-	const frontier_key = get_frontier_block_key(frontier);
-	const match_index = sequence.indexOf(match_key);
-	const frontier_index = sequence.indexOf(frontier_key);
-	if (match_index < 0 || frontier_index < 0) {
+	const positions = build_frontier_block_positions(relevant_matches);
+	const match_position = find_frontier_block_position(match, positions);
+	const frontier_position = find_frontier_block_position(frontier, positions);
+	if (!match_position || !frontier_position) {
 		return Number.POSITIVE_INFINITY;
 	}
-	return match_index - frontier_index;
+	return match_position.block_index - frontier_position.block_index;
 }
 
 function passes_frontier_block_limit(match, frontier, tournament, relevant_matches) {
@@ -1388,10 +1422,10 @@ function calculate_location_preparation_selection(tournament, location_id, optio
 		});
 		const effective_display_cutoff = display_cutoff || display_candidates[display_candidates.length - 1] || null;
 		const effective_required_preparation_count =
-			(tournament?.call_preparation_matches_automatically_enabled ? status.successor_need_count : 0);
+			(tournament?.call_preparation_matches_automatically_enabled ? status.required_preparation_count : 0);
 		const effective_missing_preparation_count = Math.max(0, effective_required_preparation_count - status.current_preparation_count);
 		const selected_matches = display_candidates.slice(0, status.missing_preparation_count);
-		const auto_selected_matches = display_candidates.slice(0, status.missing_preparation_count);
+		const auto_selected_matches = display_candidates.slice(0, effective_missing_preparation_count);
 
 		return {
 		location_id,

@@ -257,6 +257,10 @@ _describe('match automation', () => {
 			successor_need_count: 0,
 			free_court_count: 0,
 			required_preparation_count: 0,
+			successor_court_ids: [],
+			successor_match_ids: [],
+			free_court_ids: [],
+			demand_court_ids: [],
 		});
 	});
 
@@ -271,6 +275,8 @@ _describe('match automation', () => {
 		assert.strictEqual(result.successor_need_count, 0);
 		assert.strictEqual(result.free_court_count, 1);
 		assert.strictEqual(result.required_preparation_count, 1);
+		assert.deepStrictEqual(result.free_court_ids, ['c1']);
+		assert.deepStrictEqual(result.demand_court_ids, ['c1']);
 	});
 
 	_it('counts a triggered on-court match towards preparation need', () => {
@@ -293,6 +299,9 @@ _describe('match automation', () => {
 		assert.strictEqual(result.successor_need_count, 1);
 		assert.strictEqual(result.free_court_count, 0);
 		assert.strictEqual(result.required_preparation_count, 1);
+		assert.deepStrictEqual(result.successor_court_ids, ['c1']);
+		assert.deepStrictEqual(result.successor_match_ids, ['m1']);
+		assert.deepStrictEqual(result.demand_court_ids, ['c1']);
 	});
 
 	_it('does not count successor need on inactive courts', () => {
@@ -1402,6 +1411,61 @@ _describe('match automation', () => {
 		assert.deepStrictEqual(candidates.map((match) => match._id), ['m1', 'm3', 'm4']);
 	});
 
+	_it('counts repeated block keys after the frontier by their concrete sequence position', () => {
+		const tournament = {
+			preparation_call_block_ahead_limit_enabled: true,
+			preparation_call_block_ahead_limit: 1,
+			courts: [],
+			matches: [
+				make_preparation_match({
+					_id: 'before-a',
+					setup: {
+						match_num: 1,
+						scheduled_time_str: '09:00',
+						event_name: 'HE',
+						phase_block_key: 'A',
+					},
+				}),
+				make_preparation_match({
+					_id: 'frontier',
+					setup: {
+						match_num: 2,
+						scheduled_time_str: '09:05',
+						event_name: 'HE',
+						phase_block_key: 'B',
+						teams: [
+							{ players: [{ _id: 'p1' }] },
+							{ players: [] },
+						],
+						links: { from1: 999 },
+					},
+				}),
+				make_preparation_match({
+					_id: 'after-c',
+					setup: {
+						match_num: 3,
+						scheduled_time_str: '09:10',
+						event_name: 'HE',
+						phase_block_key: 'C',
+					},
+				}),
+				make_preparation_match({
+					_id: 'after-a-repeated',
+					setup: {
+						match_num: 4,
+						scheduled_time_str: '09:15',
+						event_name: 'HE',
+						phase_block_key: 'A',
+					},
+				}),
+			],
+		};
+
+		const candidates = match_automation.find_location_preparation_candidates(tournament, 'l1');
+
+		assert.deepStrictEqual(candidates.map((match) => match._id), ['before-a', 'after-c']);
+	});
+
 	_it('limits candidates by scheduled time distance from the first unusable match', () => {
 		const tournament = {
 			preparation_call_time_ahead_of_frontier_enabled: true,
@@ -1605,7 +1669,7 @@ _describe('match automation', () => {
 		assert.strictEqual(selection.missing_preparation_count, 1);
 		assert.deepStrictEqual(selection.candidates.map((match) => match._id), ['m1', 'm2', 'm3']);
 		assert.deepStrictEqual(selection.selected_matches.map((match) => match._id), ['m1']);
-		assert.deepStrictEqual(selection.auto_selected_matches.map((match) => match._id), []);
+		assert.deepStrictEqual(selection.auto_selected_matches.map((match) => match._id), ['m1']);
 	});
 
 	_it('returns no selected matches when the location already has enough preparation matches', () => {
@@ -1781,6 +1845,6 @@ _describe('match automation', () => {
 
 		assert.deepStrictEqual(selection.candidates.map((match) => match._id), ['m-eligible-1', 'm-eligible-2']);
 		assert.deepStrictEqual(selection.selected_matches.map((match) => match._id), ['m-eligible-1']);
-		assert.deepStrictEqual(selection.auto_selected_matches.map((match) => match._id), []);
+		assert.deepStrictEqual(selection.auto_selected_matches.map((match) => match._id), ['m-eligible-1']);
 	});
 });
