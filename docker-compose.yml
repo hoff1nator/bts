@@ -3,6 +3,10 @@ services:
     build: .
     ports:
       - "4000:4000"
+      - "4433:4433"
     volumes:
-      - /Users/hoffmann/Documents/bup:/bts/static/bup/dev
+      - ../bup:/bts/static/bup/dev
+      - ./data:/bts/data
+      - ./certs:/bts/certs
+      - ./config.json:/bts/config.json
     restart: unless-stopped

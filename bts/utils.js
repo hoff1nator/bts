@@ -43,6 +43,9 @@ function cmp_key(key) {
 	return function(o1, o2) {
 		const v1 = o1[key];
 		const v2 = o2[key];
+		if(!isNaN(Number(v1) && !isNaN(v2))) {
+			return cmp(Number(v1), Number(v2));
+		}
 		return cmp(v1, v2);
 	};
 }
@@ -202,6 +205,13 @@ function format_ts(ts) {
 	);
 }
 
+function format_time_ts(ts) {
+	var d = new Date(ts);
+	return (
+		pad(d.getHours(), 2) + ':' + pad(d.getMinutes(), 2)
+	);
+}
+
 function has_key(obj, testfunc) {
 	for (const k in obj) {
 		if (testfunc(k)) return true;
@@ -218,6 +228,7 @@ function get_system_timezone() {
 	return _cached_timezone;
 }
 
+
 module.exports = {
 	cmp,
 	cmp_key,
@@ -225,6 +236,7 @@ module.exports = {
 	deep_equal,
 	filter_map,
 	format_ts,
+	format_time_ts,
 	encode_html,
 	gen_token,
 	get_system_timezone,
@@ -238,5 +250,5 @@ module.exports = {
 	remove,
 	root_dir,
 	size,
-	values,
+	values
 };

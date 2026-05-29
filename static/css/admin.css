@@ -1,5 +1,27 @@
-html,
-body {
+td.battery-status-green {
+	background: linear-gradient(90deg, hsl(92, 89%, 46%) 15%, hsl(92, 90%, 68%) 100%);
+}
+td.battery-status-yellow {
+	background: linear-gradient(90deg, hsl(54, 89%, 46%) 15%, hsl(92, 90%, 45%) 100%);
+}
+td.battery-status-orange {
+	background: linear-gradient(90deg, hsl(22, 89%, 46%) 15%, hsl(54, 90%, 45%) 100%);
+	color: white;
+}
+td.battery-status-red {
+	background: linear-gradient(90deg, hsl(7, 89%, 46%) 15%, hsl(11, 93%, 68%) 100%);
+	color: white;
+}
+
+td.battery-status-charging {
+	background-image: url(../icons/charging.svg);
+	background-repeat: no-repeat;
+	background-position: center center;
+	background-color: forestgreen;
+	color: white;
+	font-weight: bold;
+}
+html, body {
 	margin: 0;
 	padding: 0;
 	font-size: 20px;
@@ -14,14 +36,21 @@ select {
 }
 
 .main {
-	padding: 0 0 0 1em;
+	padding: 0 0 0 0;
 }
 
 h1 {
 	margin: 0;
 }
 h3 {
-	margin: 0;
+	margin: 20px 0 10px 0;
+}
+
+button {
+	margin-right: 5px;
+	margin-left: 5px;
+	margin-top: 2px;
+	margin-bottom: 2px;
 }
 
 .connecting {
@@ -33,37 +62,50 @@ h3 {
 	background: rgba(255, 255, 255, 0.8);
 	font-size: 50px;
 }
-
+.status_label,
 .status {
-	position: fixed;
-	bottom: 0;
-	right: 0;
 	color: #666;
-	background: rgba(255, 255, 255, 0.8);
 }
+.btp_status_label,
 .btp_status {
-	position: fixed;
-	bottom: 1.5em;
-	right: 0;
 	color: #666;
-	background: rgba(255, 255, 255, 0.8);
 }
+.ticker_status_label,
 .ticker_status {
-	position: fixed;
-	bottom: 3em;
-	right: 0;
 	color: #666;
-	background: rgba(255, 255, 255, 0.8);
 }
 
+.metadata_container{
+    width: 100%;
+}
+
+.metadata_right_container{
+	min-width: 550px;
+    width: 20%;
+}
+
+.metadata_right_top_container{
+	display:flex;
+	flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+}
+
+.metadata_right_container_2 > table {
+    margin-top: -5px;
+}
+
+.errors_scroll_left {
+	direction: rtl;          /* Scrollbar links */
+    overflow-y: auto;
+	margin-top: 5px;
+}
 
 .errors {
-	position: fixed;
-	bottom: 0;
-	left: 0;
+	direction: ltr;          /* Inhalt wieder normal */
 	color: #f00;
-	background: rgba(255, 255, 255, 0.8);
 	white-space: pre-wrap;
+	max-height: 92px;
 }
 
 .vlink,
@@ -86,8 +128,8 @@ a:hover {
 .tournament_btp_fetch,
 .tournament_ticker_push,
 .tournament_settings_link {
-	float: right;
-	margin-right: 0.5em;
+	display: inline-block;
+	color: black;
 }
 
 .tournament_settings fieldset {
@@ -95,14 +137,56 @@ a:hover {
 	padding: 0;
 	border: none;
 }
+
 .tournament_settings > label,
-.tournament_settings fieldset > label {
-	display: block;
+.tournament_settings fieldset > label ,
+.tournament_settings > .settings > label,
+.tournament_settings fieldset > .settings > label {
+	display: flex;
+	align-items: center;
 }
+
 .tournament_settings > label > span,
-.tournament_settings fieldset > label > span {
+.tournament_settings fieldset > label > span,
+.tournament_settings > .settings > label > span,
+.tournament_settings fieldset > .settings > label > span {
 	display: inline-block;
-	min-width: 5em;
+	width: 400px;
+	min-width: fit-content;
+}
+
+.tournament_settings > label > input[type=text],
+.tournament_settings fieldset > label > input[type=text],
+.tournament_settings > .settings > label > input[type=text],
+.tournament_settings fieldset > .settings > label > input[type=text],
+.tournament_settings > label > input[type=number],
+.tournament_settings fieldset > label > input[type=number],
+.tournament_settings > .settings > label > input[type=number],
+.tournament_settings fieldset > .settings > label > input[type=number]  {
+	flex-grow: 1;
+}
+
+.tournament_settings > label > select,
+.tournament_settings fieldset > label > select,
+.tournament_settings > .settings > label > select,
+.tournament_settings fieldset > .settings > label > select {
+	flex-grow: 1;
+}
+
+
+
+.tournament_settings {
+	display: block;
+	columns: 920px 6;
+}
+
+.settings {
+	display: inline-block;
+	background-color: #ddd;
+	width: 900px;
+	padding: 10px;
+	border-radius: 10px;
+	margin: 10px;
 }
 
 .dialog_bg {
@@ -127,21 +211,13 @@ a:hover {
 	background: #eee;
 }
 
-.footer_links {
-	margin-top: 1em;
-	margin-bottom: 0.5em;
-}
-.footer_links > * {
-	display: inline-block;
-}
-.footer_links > * + * {
-	margin-left: 1em;
-}
-
 table.striped-table {
 
 }
 
+.old {
+	position: fixed; left: 0; right: 0; top: 0; bottom: 0;
+}
 
 .main_upcoming {
 	background: #000; color: #fff;
@@ -150,15 +226,282 @@ table.striped-table {
 	font-size: 35px;
 	cursor: none;
 }
+
+.end_container {
+	height: 400px;
+}
+
+.help_me{
+	position: fixed;
+	left: 0; right: 0; top: 0; bottom: 0;
+	height: 975px;
+	background-color: red;
+	width: 50px;
+}
+
 .upcoming_table {
 	border-collapse: collapse;
+	width: 98%;
+	margin: 0 1% 0 1%;
 }
 .upcoming_table td {
-	padding-bottom: 0.3em;
-	vertical-align: top;
+	vertical-align: middle;
 
 }
 .upcoming_table td:not(:first-child) {
 	padding-left: 0.3em;
+	padding-right: 0.3em;
 	white-space: pre-wrap;
+}
+
+.metadata_container {
+	background-color: #00000020;
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap-reverse;
+	justify-content: space-around;
+	padding: 0.25em 0 0 0;
+	margin: 0 0 0.75em 0;
+	border-bottom: 1px solid black;
+}
+
+.announcements_container{
+	width: 450px;
+}
+.announcements_container > form {
+	display: flex;
+	flex-direction: column;
+	justify-content: space-evenly;
+}
+
+.status_error,
+.status_waiting,
+.status_deactivated,
+.status_connecting,
+.status_connected {
+	display: inline-block;
+	background-size: 100%;
+	background-repeat: no-repeat;
+	background-position: center center;
+	height: 1.0em;
+	min-height: 1em;
+	width: 1.0em;
+	margin: 0 0.2em -0.2em 0.2em;
+}
+
+.status_connected {
+	background-image: url(../icons/signal_green.svg);
+}
+
+.status_connecting {
+	background-image: url(../icons/signal_yellow.svg);
+}
+
+.status_waiting,
+.status_error {
+	background-image: url(../icons/signal_red.svg);
+}
+
+.status_deactivated {
+	background-image: url(../icons/signal_black.svg);
+}
+
+h2 {
+	margin: 0;
+	padding-top: 15px;
+	padding-bottom: 5px;
+	font-size: 70px;
+	color: #fff;
+	text-align: center;
+}
+
+h2.edit {
+	margin: 10px 0 20px 0;
+	padding-top: 0px;
+	padding-bottom: 0px;
+	font-size: 25px;
+	color: black;
+	text-align: left;
+}
+
+.settings table > tbody > tr {
+	background-color: #bbb;
+}
+
+.settings table > tbody > tr:nth-of-type(even) {
+	background-color: #ccc;
+}
+
+.settings .online {
+	background-color: #97e6b4;
+}
+
+.settings table > tbody > .online:nth-of-type(even) {
+	background-color: #adffcb;
+}
+
+.settings .wait_for_done {
+	background-color: #dfe197;
+}
+
+.settings table > tbody > .wait_for_done:nth-of-type(even) {
+	background-color: #fcffad;
+}
+
+
+.settings .offline {
+	background-color: #e69797
+}
+
+.settings table > tbody > .offline:nth-of-type(even) {
+	background-color: #ffadad;
+}
+
+.settings table {
+	border:none;
+	border-spacing: 0;
+	width: 100%;
+}
+
+.edit_display_setting_container{
+	text-align: left;
+}
+
+.edit_display_setting_container > div{
+	margin: 10px;
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+}
+.edit_display_setting_container > div > input[type=text]{
+	width: 400px;
+}
+
+.edit_display_setting_container > div > input{
+	width: 200px;
+}
+
+.edit_display_setting_container > div > select{
+	width: 300px;
+}
+
+
+#meetingpoint_announcement{
+	width: -webkit-fill-available;
+	resize: vertical;
+	min-height: 5.0em;
+	height: 5.0em;
+}
+
+
+#preparation_addition{
+	width: -webkit-fill-available;;
+	resize: vertical;
+	min-height: 5.0em;
+	height: 5.0em;
+}
+
+.courts_table{
+	text-align: center;
+}
+
+
+.icon_td {
+	text-align: center;
+}
+
+.upload_filename_location{
+	font-style: italic;
+    color: #555;
+    max-width: 150px;
+    inline-size: 150px;
+    overflow-wrap: break-word;
+}
+
+.paralel {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: flex-start;   /* <<< DAS ist entscheidend */
+}
+
+.paralel > table {
+  flex: 1;
+}
+
+/* Tabellenlayout stabil halten */
+.officials_table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+/* rechte zwei Spalten fix 50px */
+.officials_table th:nth-child(2),
+.officials_table td:nth-child(2),
+.officials_table th:nth-child(3),
+.officials_table td:nth-child(3) {
+  width: 50px;
+  min-width: 50px;
+  max-width: 50px;
+}
+
+/* Checkbox-Zellen zentrieren */
+.officials_table td:nth-child(2),
+.officials_table td:nth-child(3) {
+  text-align: center;
+  vertical-align: middle;
+}
+
+/* Falls create_simple_checkbox ein <input> erzeugt */
+.officials_table td:nth-child(2) input,
+.officials_table td:nth-child(3) input {
+  margin: 0 auto;
+  display: block;
+}
+
+/* Header-Icons zentrieren */
+.officials_table th:nth-child(2),
+.officials_table th:nth-child(3) {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.officials_table th:nth-child(2) > div,
+.officials_table th:nth-child(3) > div {
+  margin: 0 auto;
+}
+
+.space {
+	width: 10px;
+}
+
+ * /* Normalzustand: gleiche Grundfarbe wie Tabelle/Rows (oder transparent) */
+.drop-zone td {
+	background: inherit;
+}
+
+
+/* Sobald eine Row gezogen wird, werden alle Drop-Zonen gelblich */
+tbody.drop-zones-active .drop-zone td {
+	background: rgba(255, 215, 0, 0.35);
+}
+
+/* Aktuell anvisierte Zone stärker */
+tbody.drop-zones-active .drop-zone.drop-zone-hover td {
+	background: rgba(255, 215, 0, 0.65);
+}
+
+tr[data-official-id] {
+  cursor: grab;
+}
+
+tr.dragging {
+  cursor: grabbing;
+  opacity: 0.5;
+}
+
+tr.table-spacer td {
+  padding: 0;
+  border: none;
+  background: #eee;
 }

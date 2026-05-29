@@ -4,6 +4,18 @@
 
 const utils = require('./utils');
 
+function get_locations(db, tournament_key, callback) {
+	db.locations.find({tournament_key}, function(err, locations) {
+		if (err) return callback(err);
+
+		locations.sort(function(l1, l2) {
+			return utils.natcmp(('' + l1.btp_id), ('' + l2.btp_id));
+		});
+		return callback(err, locations);
+	});
+}
+
+
 function get_courts(db, tournament_key, callback) {
 	db.courts.find({tournament_key}, function(err, courts) {
 		if (err) return callback(err);
@@ -31,9 +43,58 @@ function get_matches(db, tournament_key, callback) {
 	});
 }
 
+function get_tabletoperators(db, tournament_key, callback) {
+	db.tabletoperators.find({ tournament_key }, function (err, tabletoperators) {
+		if (err) return callback(err);
+		return callback(err, tabletoperators);
+	});
+}
+
+function get_displays(app, tournament, callback) {
+	app.db.display_court_displaysettings.find({}, function (err, display_court_displaysettings) {
+		if (err) return callback(err);
+
+		// TODO: Append not registered Displays and set status online/offline of registered displays by using ite registered ws in bubws
+		display_court_displaysettings = display_court_displaysettings.filter(function (obj) {
+			return obj.client_id !== 'deleted';
+		});
+
+		const bupws = require('./bupws');
+		bupws.add_display_status(app, tournament, display_court_displaysettings, function (display_court_displaysettings) {
+			display_court_displaysettings = display_court_displaysettings.sort(utils.cmp_key('client_id'));
+			return callback(err, display_court_displaysettings);
+		});
+	});
+}
+
+function get_normalizations(db, tournament_key, callback) {
+	db.normalizations.find({}, function (err, normalizations) {
+		if (err) return callback(err);
+		return callback(err, normalizations);
+	});
+}
+function get_advertisements(db, tournament_key, callback) {
+	db.advertisements.find({}, function (err, advertisements) {
+		if (err) return callback(err);
+		return callback(err, advertisements);
+	});
+}
+
+function get_displaysettings(db, tournament_key, callback) {
+	db.displaysettings.find({}, function (err, displaysettings) {
+		if (err) return callback(err);
+		return callback(err, displaysettings);
+	});
+}
 
 module.exports = {
+	get_locations,
 	get_courts,
 	get_matches,
 	get_umpires,
+	get_tabletoperators,
+	get_displays,
+	get_normalizations,
+	get_displaysettings,
+	get_advertisements,
 };

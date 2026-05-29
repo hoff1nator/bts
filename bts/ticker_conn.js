@@ -6,7 +6,8 @@ const ws_module = require('ws');
 
 const utils = require('./utils');
 const serror = require('./serror');
-
+const fs = require('fs').promises;
+const path = require('path');
 
 const RECONNECT_TIMEOUT = 1000;
 
@@ -43,9 +44,9 @@ class TickerConn {
 			return;
 		}
 
-		this.report_status('Verbindung wird hergestellt ...');
+		this.report_status('connecting','Verbindung wird hergestellt ...');
 		if (!/^wss?:\/\/.*\/update/.test(this.url)) {
-			this.report_status('Ungültige Ticker-URL: ' + JSON.stringify(this.url));
+			this.report_status('error','Ungültige Ticker-URL: ' + JSON.stringify(this.url));
 			return;
 		}
 		const ws_url = this.url + '?password=' + encodeURIComponent(this.password);
@@ -53,7 +54,7 @@ class TickerConn {
 		const tc = this;
 		tc.ws = ws;
 		ws.on('open', function() {
-			tc.report_status('Connected.');
+			tc.report_status('connected','');
 			tc.pushall();
 		});
 		ws.on('message', function(data) {
@@ -61,11 +62,11 @@ class TickerConn {
 			try {
 				msg = JSON.parse(data);
 			} catch (e) {
-				tc.report_status('Failed to receive ticker message: ' + e.message);
+				tc.report_status('error', 'Failed to receive ticker message: ' + e.message);
 				return;
 			}
 			if ((msg.type === 'error') || ((msg.type === 'dmsg') && (msg.dtype === 'error'))) {
-				tc.report_status('Error: ' + msg.message);
+				tc.report_status('error', msg.message);
 			}
 		});
 		ws.on('error', function() {
@@ -91,7 +92,7 @@ class TickerConn {
 			ws.close();
 		}
 		this.terminated = true;
-		this.report_status('Ended.');
+		this.report_status('deactivated');
 	}
 
 	schedule_reconnect() {
@@ -105,7 +106,7 @@ class TickerConn {
 		this._craft_event((err, event) => {
 			if (err) {
 				serror.silent('Failed to craft event: ' + err.message + ' ' + err.stack);
-				this.report_status('Failed to craft data');
+				this.report_status('error','Failed to craft data');
 				return;
 			}
 
@@ -140,11 +141,15 @@ class TickerConn {
 
 	on_end() {
 		this.ws = null;
-		this.report_status('Verbindung verloren, versuche erneut ...');
+		this.report_status('error','Verbindung verloren, versuche erneut ...');
 		this.schedule_reconnect();
 	}
 
-	report_status(msg) {
+	report_status(status, message) {
+		const msg = {
+			status: status,
+			message: message
+		}
 		this.last_status = msg;
 		const admin = require('./admin');
 		admin.notify_change(this.app, this.tournament_key, 'ticker_status', msg);
@@ -160,7 +165,10 @@ class TickerConn {
 		}, {
 			collection: 'matches',
 			query: {tournament_key},
-		}], (err, db_courts, db_matches) => {
+		}, {
+			collection: 'tournaments',
+			query: { key: tournament_key},
+		}], (err, db_courts, db_matches, db_tournaments) => {
 			if (err) return cb(err);
 
 			const interesting_ids = utils.filter_map(db_courts, c => c.match_id);
@@ -183,10 +191,59 @@ class TickerConn {
 				}
 			}
 
-			return cb(null, {
-				courts: db_courts.map(craft_court),
-				matches: interesting_matches.map(craft_match),
-			});
+			if (db_tournaments && db_tournaments.length == 1) {
+				const tournament = db_tournaments[0];
+				const tname = tournament.name;
+				const turl = "https://" + ((tournament.btp_settings && tournament.btp_settings.tournament_urn) ? tournament.btp_settings.tournament_urn : "www.turnier.de") + "/tournament" + (tournament.tguid ? "/" + tournament.tguid + "/matches" : "s/");
+				if (tournament.logo_id && tournament.logo_id != null) {
+					const file_path = path.join(utils.root_dir(), 'data', 'logos', tournament.logo_id);
+					fs.readFile(file_path)
+						.then((file_buffer) => {
+							const base64_image = file_buffer.toString('base64');
+							const filetype = tournament.logo_id.split(".")[1];
+							const mime = {
+								gif: 'image/gif',
+								png: 'image/png',
+								jpg: 'image/jpeg',
+								jpeg: 'image/jpeg',
+								svg: 'image/svg+xml',
+								webp: 'image/webp',
+							}[filetype];
+
+							return cb(null, {
+								courts: db_courts.map(craft_court),
+								matches: interesting_matches.map(craft_match),
+								tournament_name: tname,
+								tournament_url: turl,
+								tournament_logo: base64_image,
+								tournament_logo_mime: mime,
+								tournament_logo_background_color: tournament.logo_background_color
+							});
+						})
+						.catch((error) => {
+							return cb(null, {
+								courts: db_courts.map(craft_court),
+								matches: interesting_matches.map(craft_match),
+								tournament_name: tname,
+								tournament_url: turl
+							});
+						});
+				} else {
+					return cb(null, {
+						courts: db_courts.map(craft_court),
+						matches: interesting_matches.map(craft_match),
+						tournament_name: tname,
+						tournament_url: turl
+					});
+				}
+			} else {
+				return cb(null, {
+					courts: db_courts.map(craft_court),
+					matches: interesting_matches.map(craft_match),
+					tournament_name: "",
+					tournament_url: ""
+				});
+			}
 		});
 	}
 

@@ -22,7 +22,7 @@ function reconfigure(app, t) {
 		app,
 		t.btp_ip, t.btp_password, t.key,
 		t.btp_autofetch_enabled, t.btp_readonly,
-		t.is_team, t.btp_timezone);
+		t.is_team, t.btp_timezone, t.btp_autofetch_timeout_intervall);
 	conns_by_tkey.set(t.key, conn);
 }
 
@@ -33,7 +33,7 @@ function fetch(tkey) {
 		return;
 	}
 
-	conn.fetch();
+	conn.sync_data();
 }
 
 function update_score(app, match) {
@@ -51,12 +51,59 @@ function update_score(app, match) {
 		return;
 	}
 
-	if (typeof match.team1_won !== 'boolean') {
-		return; // Match not finished yet
-	}
-
 	conn.update_score(match);
 }
+
+function update_players(app, tkey, players) {
+	assert(tkey);
+
+	if (!players || players.length < 1) {
+		return;
+	}
+
+	const conn = conns_by_tkey.get(tkey);
+	if (!conn) {
+		// Do not output an error; this happens if BTP support gets disabled
+		return;
+	}
+
+	conn.update_players(players);
+}
+
+function update_courts(app, tkey, courts) {
+	assert(tkey);
+
+	if (!courts || courts.length < 1) {
+		return;
+	}
+
+	const conn = conns_by_tkey.get(tkey);
+	if (!conn) {
+		// Do not output an error; this happens if BTP support gets disabled
+		return;
+	}
+	
+	conn.update_courts(courts);
+}
+
+function update_highlight(app, match) {	
+	assert(match);
+	const tkey = match.tournament_key;
+	assert(tkey);
+
+	if (!match) {
+		return;
+	}
+
+	const conn = conns_by_tkey.get(tkey);
+	if (!conn) {
+		// Do not output an error; this happens if BTP support gets disabled
+		return;
+	}
+
+	conn.update_highlight(match);
+}
+
 
 function init(app, cb) {
 	app.db.tournaments.find({}, (err, tournaments) => {
@@ -72,7 +119,7 @@ function init(app, cb) {
 function get_status(tkey) {
 	const conn = conns_by_tkey.get(tkey);
 	if (!conn) {
-		return 'deactivated.';
+		return { status: 'deactivated', message: '' };
 	}
 
 	return conn.last_status;
@@ -84,4 +131,7 @@ module.exports = {
 	init,
 	reconfigure,
 	update_score,
+	update_players,
+	update_courts,
+	update_highlight,
 };

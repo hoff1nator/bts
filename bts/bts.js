@@ -80,14 +80,10 @@ function cadmin_router() {
 }
 
 function create_app(config, db) {
-	const server = require('http').createServer();
+	
 	const app = express();
-	const wss = new ws_module.Server({server: server});
-
 	app.config = config;
 	app.db = db;
-	app.wss = wss;
-
 	app.use('/bup/', express.static(config.bup_location, {index: config.bup_index}));
 	app.use('/bupdev/', express.static(path.join(utils.root_dir(), 'static/bup/dev/'), {index: 'bup.html'}));
 	app.use('/static/', express.static('static/', {}));
@@ -100,16 +96,39 @@ function create_app(config, db) {
 	app.use('/u(:courtnum)?', shortcuts.umpire_handler);
 	app.use('/r(:courtnum)?', shortcuts.result_handler);
 
-	app.use(body_parser.json());
-	app.get('/h/:tournament_key/courts', http_api.courts_handler);
-	app.get('/h/:tournament_key/matches', http_api.matches_handler);
-	app.post('/h/:tournament_key/m/:match_id/score', http_api.score_handler);
-	app.post('/h/:tournament_key/m/:match_id/setup', http_api.setup_handler);
+	app.use(body_parser.json({ limit: '50kb' }));
 	app.get('/h/:tournament_key/m/:match_id/info', http_api.matchinfo_handler);
-	app.get('/h/:tournament_key/court-overview', http_api.court_overview_handler);
 	app.get('/h/:tournament_key/logo/:logo_id', http_api.logo_handler);
+	app.get('/h/:tournament_key/matches', http_api.matches_handler);
+	app.post('/h/:tournament_key/m/:match_id/setup', http_api.setup_handler);
+	app.post('/h/:tournament_key/m/:match_id/tshirt-sizes', http_api.tshirt_sizes_handler);
+	app.get('/h/:tournament_key/court-overview', http_api.court_overview_handler);
+	app.get('/h/:tournament_key/courts-to-call', http_api.courts_to_call_handler);
+	app.get('/h/:tournament_key/tshirt-overview', http_api.tshirt_overview_handler);
+	app.get('/h/:tournament_key/active-players', http_api.active_players_handler);
+	app.get('/h/:tournament_key/mixed-overview', http_api.mixed_overview_handler);
+	app.get('/h/:tournament_key/rotating-display', http_api.rotating_display_handler);
 
+	var server = null;
+	if (config.enable_https) {
+		const options = {
+			key: fs.readFileSync(config.https_key),
+			cert: fs.readFileSync(config.https_cert)
+		}
+		server = require('https').createServer(options, app);
+	} else {
+		server = require('http').createServer(app);
+	}
+	
+	const MAX_WS_CONNECTIONS = 200;
+	const MAX_WS_MESSAGE_SIZE = 512 * 1024; // 512 KB
+	const wss = new ws_module.Server({ server: server, maxPayload: MAX_WS_MESSAGE_SIZE });
+	app.wss = wss;
 	wss.on('connection', function connection(ws, req) {
+		if (wss.clients.size > MAX_WS_CONNECTIONS) {
+			ws.close(1013, 'Too many connections');
+			return;
+		}
 		const location = url.parse(req.url, true);
 		if (location.path === '/ws/admin') {
 			return wshandler.handle(admin, app, ws);
@@ -124,10 +143,27 @@ function create_app(config, db) {
 		}
 	});
 
-	server.on('request', app);
-	server.listen(config.port, function () {
-		// console.log('Listening on ' + server.address().port);
-	});
+	if (config.enable_https) {
+		server.listen(config.https_port, function () {
+			console.log("HTTPS server listening on port " + config.https_port);
+		});
+		const httpApp = express();
+		httpApp.get("*", function (req, res, next) {
+			var host = req.headers.host.split(":")[0]
+			if (config.https_port != 443) {
+				host = host + ":" + config.https_port
+			}
+			res.redirect("https://" + host + req.path);
+		});
+
+		require('http').createServer(httpApp).listen(config.port, function () {
+			console.log("HTTP server listening on port " + config.port+" ==> permanently redirected to https.");
+		});
+	} else {
+		server.listen(config.port, function () {
+			console.log("HTTP server listening on port " + config.port);
+		});
+	}
 	return app;
 }
 

@@ -1,22 +1,57 @@
 .match_save_button {
 	font-size: 120%;
 	padding: 9px 20px;
+	margin: 10px 0px 10px 0px; 
+}
+
+.announce_button {
+	font-size: 100%;
+	padding: 9px 20px;
+	margin: 10px 0px 10px 0px; 
+}
+
+.announce_emergency_button {
+	font-size: 100%;
+	padding: 9px 20px;
+	margin: 10px 0px 10px 0px;
+	background-color: red;
+	color: whitesmoke;
+	font-weight: bold;
+}
+
+.stop_emergency_button {
+	font-size: 100%;
+	padding: 9px 20px;
+	margin: 10px 0px 10px 0px;
+	background-color: green;
+	color: whitesmoke;
+	font-weight: bold;
+}
+
+.announcements_btn_container {
+	display: flex;
+	justify-content: space-around;
 }
 
 .match_num {
 	text-align: right;
+	padding: 0 0.3em 0 0.3em;
 }
 
 .match_edit_button,
 .match_scoresheet_button,
+.match_preparation_call_button,
+.match_begin_to_play_button,
+.match_manual_call_button,
+.match_second_call_button,
+.match_second_preparation_call_button,
 .match_rawinfo {
 	display: inline-block;
-	width: 1em;
 	min-width: 1em;
-	height: 1em;
 	min-height: 1em;
 	background-size: 100%;
-	opacity: 0.5;
+	background-repeat: no-repeat;
+	background-position: center center;
 }
 .match_edit_button {
 	background-image: url(../icons/edit.svg);
@@ -25,9 +60,49 @@
 	margin: 0 0 0 0.3em;
 	background-image: url(../icons/scoresheet.svg);
 }
+
+.match_preparation_call_button {
+	height: 100%;
+    width: auto;
+    margin: 0 0 -0.1em 0.3em;
+	/*background-image: url(../icons/preparation.svg);*/
+}
+.match_manual_call_button {
+	height: 1.5em;
+	min-height: 1em;
+	width: 2.3em;
+	margin: 0 0 -0.1em 0.3em;
+	background-image: url(../icons/manual_call.svg);
+}
+.match_begin_to_play_button {
+	height: 1.5em;
+	min-height: 1em;
+	width: 2.3em;
+	margin: 0 0 -0.1em 0.3em;
+	background-image: url(../icons/start.svg);
+}
+
+.match_second_call_button,
+.match_second_preparation_call_button {
+	height: 1.2em;
+    min-height: 1em;
+    background-size: cover;
+    width: 1.9em;
+    margin: 0 0.2em -0.2em 0.2em;
+	background-image: url(../icons/second_call.svg);
+}
+
 .match_rawinfo {
 	margin: 0 0.3em 0 0.3em;
 	background-image: url(../icons/rawinfo.svg);
+}
+
+.match_timer > .match_confirm_button {
+    min-height: 1.6em;
+    background-size: cover;
+    background-color: #00000000;
+    width: 2.3em;
+    background-image: url(../icons/confirm_match.svg);
 }
 
 .edit_match_container {
@@ -42,18 +117,80 @@
 }
 
 .match_edit_button:hover,
-.match_scoresheet_button:hover {
-	opacity: 1;
+.match_second_call_button:hover,
+.match_second_preparation_call_button:hover,
+.match_preparation_call_button:hover,
+.match_begin_to_play_button:hover,
+.match_manual_call_button:hover,
+.match_scoresheet_button:hover,
+.match_confirm_button:hover {
+	opacity: 0.5;
 }
 
 .match_table {
 	border-collapse: collapse;
+	width: 98%;
+	margin: 0 1% 0 1%;
 }
+
 .match_table > thead > tr > th {
 	text-align: left;
 }
 .match_table > tbody > tr:hover > td {
-	background: #ddd;
+	background-color: #00000030;
+}
+
+.match_table > tbody > tr:nth-of-type(even) > td {
+	background-color: #00000010;
+}
+
+.match_table > tbody > tr:nth-of-type(even):hover > td {
+	background-color: #00000030;
+}
+
+.match_table > tbody > tr > td.inactive {
+	
+	background-color: #00000040;
+}
+
+.match_table > tbody > tr:nth-of-type(even) > td.inactive {
+	
+	background-color: #00000050;
+}
+
+.match_table > tbody > tr > td.empty_element.droppable {
+	background-color: #c6282830;
+}
+
+.match_table > tbody > tr:nth-of-type(even) > td.empty_element.droppable {
+	background-color: #c6282840;
+}
+
+.match_table > tbody > tr:hover > td.empty_element.droppable {
+	background-color: #c6282860;
+}
+
+.match_table > tbody > tr > td.droppable_active {
+
+	background-color: #fbe44d44;
+}
+
+.match_table > tbody > tr:hover > td.droppable_active {
+	background-color: #fbe44dbb;
+}
+
+.match_table > tbody > tr:nth-of-type(even) > td.droppable_active {
+	
+	background-color: #fbe44d88;
+}
+
+.match_table > tbody > tr:nth-of-type(even):hover > td.droppable_active {
+	background-color: #fbe44dbb;
+}
+
+
+.match_table > tbody > tr > #droppable {
+	min-width: 1000px;
 }
 
 .match_cancel_link {
@@ -64,35 +201,131 @@
 	text-align: right;
 	color: #666;
 }
+
 .match_team2 {
-	padding-right: 1em;
+	padding-right: 0.3em;
 }
+
+.match_team1_public,
+.match_team2_public {
+	width: 50%;
+	text-wrap: nowrap;
+}
+
+.match_team1_upcoming,
+.match_team2_upcoming {
+	width:50%;
+	text-wrap: nowrap;
+	padding: 0px !important;
+	margin: 0px !important;
+}
+
+.match_team1_upcoming > span,
+.match_team2_upcoming > span{
+	text-wrap: nowrap;
+}
+
 .match_vs {
 	color: #999;
-	padding: 0 0.5em;
+	width: 1.0em;
+	text-align: center;
+	margin: 0px;
 }
 .match_team_won {
 	font-weight: bold;
 }
+
+.match_score{
+	font-weight: bold;
+	padding-left: 0.2em;
+	text-wrap: nowrap;
+}
 .match_score_current {
 	font-weight: bold;
+	font-size: 1.5em;
+	padding-left: 0.3em;
+	display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    align-items: center;
 }
+
+.no_status_public {
+	font-size: 60px;
+}
+
+.operators_public {
+	font-size: 60px;
+	font-weight: 100;
+}
+
+.umpire_name_public {
+	font-size: 60px;
+	font-weight: 100;
+}
+
+.score_public {
+	width: 550px !important;
+	max-width: 550px !important; 
+}
+
+.score_public > .match_score_current {
+	font-size: 1.82em;
+}
+
+	.match_score_current > .tablet,
+	.match_score_current > .service_judge,
+	.match_score_current > .umpire {
+		min-width: 1em;
+		width: 1em;
+		min-height: 0.65em;
+		height: 0.65em;
+		margin: 0px 5px;
+		/*cursor: none;*/
+	}
+
+.match_score_current > .match_no_umpire,
+.match_score_current > span {
+	padding: 0 0;
+	font-size: 35px;
+	font-weight: 300;
+	/*cursor: none;*/
+}
+
+.match_timer > .timer {
+	font-size: 1.2em;
+	font-weight: 900;
+    background-color: #111111;
+    min-width: 2.3em;
+    text-align: right;
+    padding: 0.1em 0.3em 0.1em 0.3em;
+	border-radius: 7px;
+}
+
 .match_shuttle_count {
 	white-space: pre;
 	text-align: right;
-	padding-left: 1em;
 }
+
+.match_shuttle_count_display_active {
+	width: 40px;
+}
+
 .match_shuttle_count span::after {
 	content: '';
 	display: inline-block;
-	width: 1em;
 	height: 1em;
 }
-.match_shuttle_count span.match_shuttle_count_display_active::after {
+.match_shuttle_image{
 	background-image: url("../../bup/icons/shuttle.svg");
-	background-size: contain;
-	background-position: center;
+	height: 1.0em;
+    min-height: 1em;
+    width: 0.8em;
+    margin: 0.0em 0.0em -0.1em 0.0em;
+	background-size: 100%;
 	background-repeat: no-repeat;
+	background-position: center center;
 }
 
 .match_no_umpire {
@@ -110,7 +343,11 @@
 	max-height: 100vh;
 }
 
-
+match_preparation_call_button,
+match_begin_to_play_button,
+match_second_call_button,
+match_second_preparation_call_button,
+match_manual_call_button,
 .match_scoresheet_buttons {
 	position: fixed;
 	left: 0;
@@ -132,10 +369,221 @@
 	min-width: 5em;
 }
 
+.match_second_call_button > * , 
+.match_second_preparation_call_button > * {
+	display: block;
+}
+
+.match_second_call_button > button, 
+.match_second_preparation_call_button > button {
+	margin: 0 0 0 2vmin;
+	font-size: 5vmin;
+	padding: 0.1em 0.1em;
+	min-width: 5em;
+}
+
 .match_umpire_style_umpires {
 	font-weight: bold;
 }
 
+.checked_in {
+	background-color: #adffcb;
+}
+
+.can_check_out {
+	cursor: url('../icons/check_out.png')15 15, auto;
+}
+
+.not_checked_in {
+	background-color: #d1c4e9;
+}
+
+.can_check_in {
+	cursor: url('../icons/check_in.png')15 15, auto;
+}
+
+.now_playing {
+	background-color: #ffabab;
+}
+
+.cooldown {
+	background-color: #fbe44d;
+}
+
+.now_on_court {
+	background-color: unset;
+}
+
+@font-face { 
+	font-family: "SEGMENT"; 
+	src: url("./seg7.ttf");
+	}
+
+.player > .timer {
+	display: inline-block;
+	vertical-align: middle;
+	font-size: 0.7em;
+	padding: 0.2em 0.3em 0.0em 0.3em;
+	margin: -0.3em 0.2em 0em 0.2em;
+	border-radius: 0.4em;
+	font-weight: normal;
+	text-align: right;
+	min-width: 2.9em;
+	font-family: "SEGMENT"; 
+}
+
+.tablet,
+.tablet_inline,
+.umpire,
+.service_judge,
+.no_umpire,
+.court,
+.court_history,
+.court_upcoming {
+	margin: 0 0.2em -0.2em 0.2em;
+	display: inline-block;
+	width: 1.73em;
+	min-width: 1.73em;
+	height: 1.2em;
+	min-height: 1.2em;
+	background-size: cover;
+	opacity: 1;
+	color: #fff;
+	text-align: center;
+	-webkit-text-stroke-width: 1px;
+	-webkit-text-stroke-color: black;
+	text-shadow: 3px 3px 3px #000, -1px -1px 3px #000, 1px -1px 3px #000, -1px 1px 3px #000, 1px 1px 3px #000;
+}
+
+.tablet,
+.tablet_inline {
+	background-image: url(../icons/tablet.svg);
+}
+
+.tablet {
+	margin: -1px 0.2em -0.2em 0.2em;
+}
+
+.tablet_inline {
+	height: 1em;
+	min-height: 1em;
+	width: 1.4em;
+	min-width: 1.4em;
+	font-weight: 900;
+	font-size: 1.1em;
+	margin: -0.1em 0.1em 0.1em 0.1em;
+	line-height: 100%;
+}
+
+.umpire,
+.service_judge,
+.no_umpire,
+.match_no_umpire {
+	text-wrap: nowrap;
+}
+
+.tablet_operator {
+	display: flex;
+	flex-wrap: nowrap;
+	align-items: center;
+}
+
+.umpire {
+	background-image: url(../icons/umpire.svg);
+}
+
+.service_judge {
+	background-image: url(../icons/service_judge.svg);
+}
+
+.no_umpire {
+	background-image: url(../icons/no_umpire.svg);
+}
+
+.court{
+	background-image: url(../icons/court.svg);
+	height: 1em;
+	min-height: 1em;
+	width: 1.5em;
+	min-width: 1.5em;
+	font-weight: 900;
+	font-size: 1.1em;
+	margin: -0.1em 0.1em 0.1em 0.1em;
+	line-height: 100%;
+}
+
+
+.court_history,
+.court_upcoming {
+	background-image: url(../icons/court_history.svg);
+	height: 1em;
+	min-height: 1em;
+	width: 1.5em;
+	min-width: 1.5em;
+	font-weight: 900;
+	font-size: 1.3em;
+	margin: -0.1em 0.3em 0.1em 0.3em;
+	line-height: 100%;
+}
+
+.court_upcoming {
+	margin-left: 0;
+	margin-right: 0;
+}
+
+.highlight_0 {
+	background-color: #ffffff;
+}
+
+.highlight_1 {
+	background-color: #ffd838;
+}
+
+.highlight_2 {
+	background-color: #ff79ab;
+}
+
+.highlight_3 {
+	background-color: #fbad4b;
+}
+
+.highlight_4 {
+	background-color: #1dace6;
+}
+
+.highlight_5 {
+	background-color: #5ce1b8;
+}
+
+.highlight_6 {
+	background-color: #c56bff;
+}
+
+.call_badge {
+	font-size: 0.7em;
+	text-align: center;
+	margin-top: 0.1em;
+}
+.call_second {
+	color: #f57c00;
+}
+.call_final {
+	color: #e91e8c;
+}
+
+.preparation_container {
+	display: flex;
+	flex-direction: column;
+}
+
+.preparation {
+	font-weight: bold;
+	text-wrap: nowrap;
+}
+
+th > select {
+	width: 70px;
+}
 
 @media print {
 	.toprow,
@@ -147,4 +595,114 @@
 	.match_scoresheet_buttons {
 		display: none;
 	}
+}
+
+.incomplete {
+	color: #aaaaaa;
+	font-style: italic;
+}
+
+td.actions {
+    width: 80px;
+}
+
+td.court_number {
+    width: 60px;
+}
+
+td.match_num {
+    width: 35px;
+	padding-right: 15px;
+}
+
+td.match_properties {
+	width: 280px;
+}
+
+.finished_container > table > tbody > tr > td.score {
+	width: 170px;
+}
+
+.courts_container > table > tbody > tr > td.score {
+	width: 270px;
+}
+
+
+
+td.umpire_and_tablet{
+	width: 50px;
+	padding-right: 10px;
+}
+
+td.match_timer {
+	width: 3.6em;
+}
+
+td.call_td {
+	width: 5.5em;
+}
+
+.name {
+	text-wrap: nowrap;
+}
+
+.person {
+	text-wrap: nowrap;
+}
+
+th.match_num {
+	text-align: center !important;
+}
+
+th.players {
+	text-align: center !important;
+}
+
+h3.section {
+	margin-left: 1%;
+	margin-right: 1%;
+	margin-top: 20px;
+	text-align: center;
+}
+
+.main_upcoming > div > table > tbody > .court_row:nth-of-type(even),
+.main_upcoming > div > table > tbody > tr:nth-of-type(even){
+	background-color: #222222;
+}
+
+.do_not_show {
+	display: none;
+}
+
+.location {
+	color: #00000066;
+}
+
+.match_number_upcoming,
+.match_scheduled_upcoming,
+.match_event_upcoming {
+	color: #aaa;
+	text-wrap: nowrap;
+	width: 50px;
+}
+
+.court_number_upcoming {
+	width: 0px;
+}
+
+.upcoming_tbody{
+	vertical-align: middle;
+}
+
+.upcoming_tbody > tr {
+	height: 65px;
+}
+
+.upcoming_tbody > tr > td {
+	height: 100%;
+	vertical-align: inherit;
+}
+
+.complete {
+	cursor: grab;
 }

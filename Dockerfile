@@ -12,6 +12,7 @@ RUN mkdir -p static/bup/
 ADD div/bupdate.js div/
 ADD Makefile ./
 RUN make bupdate
+RUN make install-bup-dev
 
 ADD . .
 

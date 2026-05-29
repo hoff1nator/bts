@@ -2,6 +2,9 @@
 
 const serror = require('./serror');
 
+// Per-connection rate limiting: max messages per window
+const RATE_LIMIT_WINDOW_MS = 2000;
+const RATE_LIMIT_MAX_MESSAGES = 30;
 
 function handle(mod, app, ws) {
 	function _ws_sendmsg(msg) {
@@ -32,7 +35,22 @@ function handle(mod, app, ws) {
 
 	mod.on_connect(app, ws);
 
+	let _msg_count = 0;
+	let _msg_window_start = Date.now();
+
 	ws.on('message', function(msg_json) {
+		// Per-connection rate limiting
+		const now = Date.now();
+		if (now - _msg_window_start > RATE_LIMIT_WINDOW_MS) {
+			_msg_count = 0;
+			_msg_window_start = now;
+		}
+		_msg_count++;
+		if (_msg_count > RATE_LIMIT_MAX_MESSAGES) {
+			ws.sendmsg({type: 'error', message: 'Rate limit exceeded'});
+			return;
+		}
+
 		try {
 			const msg = JSON.parse(msg_json);
 			if (!msg || !msg.type) {
@@ -40,6 +58,7 @@ function handle(mod, app, ws) {
 					type: 'error',
 					message: 'invalid JSON or type missing',
 				});
+				return;
 			}
 
 			if (msg.type === 'error') {

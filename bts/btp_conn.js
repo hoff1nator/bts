@@ -7,6 +7,7 @@ const async = require('async');
 
 const btp_proto = require('./btp_proto');
 const btp_sync = require('./btp_sync');
+const update_queue = require('./update_queue');
 const serror = require('./serror');
 
 const AUTOFETCH_TIMEOUT = 30000;
@@ -14,6 +15,7 @@ const CONNECT_TIMEOUT = 5000;
 const WAIT_TIMEOUT = 10000;
 const BTP_PORT = 9901;
 const BLP_PORT = 9911;
+
 
 function send_raw_request(ip, port, raw_req, callback) {
 	assert(callback);
@@ -69,7 +71,7 @@ function send_request(ip, port, xml_req, timeZone, callback) {
 
 
 class BTPConn {
-	constructor(app, ip, password, tkey, enabled_autofetch, readonly, is_team, timeZone) {
+	constructor(app, ip, password, tkey, enabled_autofetch, readonly, is_team, timeZone, autofetch_timeout_intervall) {
 		this.app = app;
 		this.last_status = 'Activated';
 		this.ip = ip;
@@ -81,6 +83,7 @@ class BTPConn {
 		this.autofetch_timeout = null;
 		this.readonly = readonly;
 		this.is_team = is_team;
+		this.autofetch_timeout_intervall = autofetch_timeout_intervall ? autofetch_timeout_intervall : AUTOFETCH_TIMEOUT;
 		this.connect();
 	}
 
@@ -89,40 +92,54 @@ class BTPConn {
 			return;
 		}
 
-		this.report_status('Connecting ...');
+		this.report_status('connecting','Try to establish connection to BTP.');
 		this.send(btp_proto.login_request(this.password), response => {
-			if (!response.Action || !response.Action[0] || !response.Action[0].ID[0] || (response.Action[0].ID[0] !== 'REPLY')) {
-				this.report_status('Invalid reply to login request');
-				this.schedule_reconnect();
+			if (!response || response == null || !response.Action || !response.Action[0] || !response.Action[0].ID[0] || (response.Action[0].ID[0] !== 'REPLY')) {
+				this.report_status('error','Invalid reply to login request');
 				return;
 			}
 
 			if (response.Action[0].Result[0] !== 1) {
-				this.report_status('Invalid password');
-				this.schedule_reconnect();
+				this.report_status('error', 'Invalid password');
 				return;
 			}
 
-			this.report_status('Logged in.');
+			this.report_status('connected','Logged in.');
 			this.key_unicode = response.Action[0].Unicode[0];
 
 			this.pushall();
 			if (this.enabled_autofetch) {
-				this.fetch();
+				update_queue.instance().execute(this.fetch, this,true);
 			}
-			this.schedule_fetch();
 		});
 	}
 
-	fetch() {
-		const ir = btp_proto.get_info_request(this.password);
-		this.send(ir, response => {
-			btp_sync.fetch(this.app, this.tkey, response, (err) => {
-				if (err) {
-					this.report_status('Synchronisations-Fehler: ' + err.stack);
-					console.error(err.stack);
-				}
-			});
+	sync_data() {
+		update_queue.instance().execute(this.fetch, this, false);
+	}
+
+	async fetch(connection, reschedule_fetch ) {
+		return new Promise((resolve, reject) => {
+			try {			
+				const ir = btp_proto.get_info_request(connection.password);
+				connection.send(ir, async (response) => {
+					try {
+						if (response && response != null) {
+							const value = await btp_sync.sync_btp_data(connection.app, connection.tkey, response);
+							if (reschedule_fetch == true) {
+								connection.schedule_fetch();
+							}
+							resolve(value);
+						} else {
+							resolve(null);
+						}
+					} catch (innerError) {
+						reject(innerError);
+					}
+				});
+			} catch (e) {
+				reject(e);
+			}
 		});
 	}
 
@@ -133,29 +150,25 @@ class BTPConn {
 		if (!this.enabled_autofetch) {
 			return;
 		}
-
 		this.autofetch_timeout = setTimeout(() => {
-			this.fetch();
-			this.schedule_fetch();
-		}, AUTOFETCH_TIMEOUT);
+			update_queue.instance().execute(this.fetch,this,true);
+		}, this.autofetch_timeout_intervall);
 	}
 
 	terminate() {
 		this.terminated = true;
-		this.report_status('Terminated.');
+		this.report_status('deactivated','Terminated.');
 	}
 
 	send(xml_req, success_cb) {
-		if (this.terminated) return;
-
+		if (this.terminated) return success_cb(null);
 		const port = this.is_team ? BLP_PORT : BTP_PORT;
 		send_request(this.ip, port, xml_req, this.timeZone, (err, response) => {
 			if (err) {
-				this.report_status('Connection error: ' + err.message);
+				this.report_status('error', 'Connection error: ' + err.message);
 				this.schedule_reconnect();
-				return;
+				return success_cb(null);
 			}
-
 			success_cb(response);
 		});
 	}
@@ -195,11 +208,15 @@ class BTPConn {
 	}
 
 	on_end() {
-		this.report_status('Verbindung verloren, versuche erneut ...');
+		this.report_status('error', 'Verbindung verloren, versuche erneut ...');
 		this.schedule_reconnect();
 	}
 
-	report_status(msg) {
+	report_status(status, message) {
+		const msg = {
+			status: status,
+			message: message
+		}
 		this.last_status = msg;
 		const admin = require('./admin');
 		admin.notify_change(this.app, this.tkey, 'btp_status', msg);
@@ -212,12 +229,12 @@ class BTPConn {
 
 		async.waterfall([
 			(cb) => {
-				if (!match.setup || !match.setup.umpire_name) {
+				if (!match.setup || !match.setup.umpire || !match.setup.umpire.name) {
 					return cb(null, null, null);
 				}
 
 				this.app.db.umpires.findOne({
-					name: match.setup.umpire_name,
+					name: match.setup.umpire.name,
 					tournament_key: this.tkey,
 				}, (err, umpire) => {
 					if (err) {
@@ -225,12 +242,12 @@ class BTPConn {
 					}
 
 					const umpire_btp_id = umpire ? umpire.btp_id : null;
-					if (!match.setup.service_judge_name) {
+					if (!match.setup.service_judge || !match.setup.service_judge.name) {
 						return cb(null, umpire_btp_id, null);
 					}
 
 					this.app.db.umpires.findOne({
-						name: match.setup.service_judge_name,
+						name: match.setup.service_judge.name,
 						tournament_key: this.tkey,
 					}, (err, service_judge) => {
 						if (err) {
@@ -270,7 +287,7 @@ class BTPConn {
 			}
 
 			if (! this.key_unicode) {
-				serror.silent('Trying to send match data, but never logged in. Must retry later');
+				//serror.silent('Trying to send match data, but never logged in. Must retry later');
 				return;
 			}
 
@@ -290,6 +307,62 @@ class BTPConn {
 				}
 			});
 
+		});
+	}
+
+	update_highlight(match) {
+		this.update_score(match);
+	}
+
+	update_players(players) {
+		if (this.readonly) {
+			return;
+		}
+
+		if (!players || players.length < 1) {
+			return;
+		}
+
+		if (! this.key_unicode) {
+			//serror.silent('Trying to update player data, but never logged in. Must retry later');
+			return;
+		}
+
+		const req = btp_proto.update_players_request(players, this.key_unicode, this.password);
+		this.send(req, response => {
+			const results = response.Action[0].Result;
+			const rescode = (results && results.length > 0) ? results[0] : 'no-result';
+			if (rescode === 1) {
+
+			} else {
+				serror.silent('Update Player failed with error code ' + rescode);
+			}
+		});
+	}
+
+	update_courts(courts) {
+		if (this.readonly) {
+			return;
+		}
+
+		if (!courts || courts.length < 1) {
+			return;
+		}
+
+		if (! this.key_unicode) {
+			//serror.silent('Trying to update court data, but never logged in. Must retry later');
+			return;
+		}
+
+		const req = btp_proto.update_courts_request(courts, this.key_unicode, this.password);
+		this.send(req, response => {
+			const results = response.Action[0].Result;
+			const rescode = results ? results[0] : 'no-result';
+			if (rescode === 1) {
+
+			} else {
+				serror.silent('Update Courts failed with error code ' + rescode);
+			}
 		});
 	}
 }

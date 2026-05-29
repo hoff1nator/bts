@@ -22,7 +22,22 @@ function handle_tset(app, ws, msg) {
 	if (!_require_msg(ws, msg, ['event'])) {
 		return;
 	}
+	if (msg.event.tournament_name) {
+		app.config.tournament_name = msg.event.tournament_name;
+	}
 
+	if (msg.event.tournament_logo) {
+		app.config.tournament_logo = msg.event.tournament_logo;
+		app.config.tournament_logo_background_color = msg.event.tournament_logo_background_color;
+		app.config.tournament_logo_mime = msg.event.tournament_logo_mime;
+	} else {
+		app.config.tournament_logo = undefined;
+		app.config.tournament_logo_background_color = undefined;
+		app.config.tournament_logo_mime = undefined;
+	}
+	if (msg.event.tournament_url) {
+		app.config.note_html = "Alle Spiele auf <a href=\"" + msg.event.tournament_url+"\" target='_blank'>Turnier.de</a>";
+	}
 	tdata.set(app, msg.event, (err) => {
 		if (err) {
 			serror.silent('Failed tset: ' + err.message + ' ' + err.stack);

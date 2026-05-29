@@ -6,139 +6,444 @@ function default_handler(rerender, special_funcs) {
 	};
 }
 
-function change_score(cval) {
-	const match_id = cval.match_id;
+	function change_score(cval) {
+		const match_id = cval.match_id;
 
-	// Find the match
-	const m = utils.find(curt.matches, m => m._id === match_id);
-	if (!m) {
-		cerror.silent('Cannot find match to update score, ID: ' + JSON.stringify(match_id));
-		return;
+		// Find the match
+		const m = utils.find(curt.matches, m => m._id === match_id);
+		if (!m) {
+			cerror.silent('Cannot find match to update score, ID: ' + JSON.stringify(match_id));
+			return;
+		}
+
+		m.network_score = cval.network_score;
+		m.presses = cval.presses;
+		m.team1_won = cval.team1_won;
 	}
 
-	m.network_score = cval.network_score;
-	m.presses = cval.presses;
-	m.team1_won = cval.team1_won;
-}
+	function default_handler_func(rerender, special_funcs, c) {
+		if (special_funcs && special_funcs[c.ctype]) {
+			special_funcs[c.ctype](c);
+			return;
+		}
 
-function change_current_match(cval) {
-	// Do not use courts_by_id since that may not be initialized in all views
-	const court = utils.find(curt.courts, c => c._id === cval.court_id);
-	if (court) {
-		court.match_id = cval.match_id;
-	} else {
-		cerror.silent('Cannot find court ' + JSON.stringify(cval.court_id));
-	}
-}
-
-function default_handler_func(rerender, special_funcs, c) {
-	if (special_funcs && special_funcs[c.ctype]) {
-		special_funcs[c.ctype](c);
-		return;
-	}
-
-	switch (c.ctype) {
-	case 'props': {
-		curt.name = c.val.name;
-		curt.is_team = c.val.is_team;
-		curt.is_nation_competition = c.val.is_nation_competition;
-		curt.only_now_on_court = c.val.only_now_on_court;
-		curt.btp_timezone = c.val.btp_timezone;
-		curt.btp_enabled = c.val.btp_enabled;
-		curt.btp_autofetch_enabled = c.val.btp_autofetch_enabled;
-		curt.btp_readonly = c.val.btp_readonly;
-		curt.btp_ip = c.val.btp_ip;
-		curt.ticker_enabled = c.val.ticker_enabled;
-		curt.ticker_url = c.val.ticker_url;
-		curt.ticker_password = c.val.ticker_password;
-		curt.logo_id = c.val.logo_id;
-
-		uiu.qsEach('.ct_name', function(el) {
-			if (el.tagName.toUpperCase() === 'INPUT') {
-				el.value = c.val.name;
-			} else {
-				uiu.text(el, c.val.name);
+		switch (c.ctype) {
+		case 'free_announce':
+			announce([c.val.text]);
+			break;
+		case 'emergency_announce':
+			curt.enable_emergency = c.val;
+			emergency_announce(c.val);
+			if (current_view === 'show'){
+				ctournament.update_emergency_btn()
 			}
-		});
-		const CHECKBOXES = [
-			'is_team', 'is_nation_competition', 'only_now_on_court',
-			'btp_enabled', 'btp_autofetch_enabled', 'btp_readonly',
-			'ticker_enabled'];
-		for (const cb_name of CHECKBOXES) {
-			uiu.qsEach('input[name="' + cb_name + '"]', function(el) {
-				el.checked = curt[cb_name];
+			if(curt.enable_emergency) {
+				cerror.silent('Evakuierungsdurchsage wird gestartet!');
+			} else {
+				cerror.silent('Evakuierungsdurchsage wurde gestoppt');
+			}
+			break;
+		case 'props': {			
+			curt.name = c.val.name;
+			curt.is_team = c.val.is_team;
+			curt.tguid = c.val.tguid;
+			curt.is_nation_competition = c.val.is_nation_competition;
+			curt.btp_timezone = c.val.btp_timezone;
+			curt.btp_autofetch_timeout_intervall = c.val.btp_autofetch_timeout_intervall;
+			curt.warmup = c.val.warmup;
+			curt.warmup_ready = c.val.warmup_ready;
+			curt.warmup_start = c.val.warmup_start;
+			curt.btp_enabled = c.val.btp_enabled;
+			curt.btp_autofetch_enabled = c.val.btp_autofetch_enabled;
+			curt.btp_readonly = c.val.btp_readonly;
+			curt.btp_ip = c.val.btp_ip;
+			curt.ticker_enabled = c.val.ticker_enabled;
+			curt.ticker_url = c.val.ticker_url;
+			curt.ticker_password = c.val.ticker_password;
+			curt.logo_id = c.val.logo_id;
+
+			uiu.qsEach('.ct_name', function(el) {
+				if (el.tagName.toUpperCase() === 'INPUT') {
+					el.value = c.val.name;
+				} else {
+					uiu.text(el, c.val.name);
+				}
 			});
-		}
-		uiu.qsEach('input[name="btp_ip"]', function(el) {
-			el.value = curt.btp_ip;
-		});
+			const CHECKBOXES = [
+				'is_team', 'is_nation_competition',
+				'btp_enabled', 'btp_autofetch_enabled', 'btp_readonly',
+				'ticker_enabled', 'tabletoperator_enabled', 'tabletoperator_with_state_enabled',
+				'tabletoperator_with_state_from_match_enabled',
+				'tabletoperator_winner_of_quaterfinals_enabled', 'tabletoperator_split_doubles',
+				'tabletoperator_set_break_after_tabletservice', 'tabletoperator_break_seconds',
+				'announcement_speed', 'announcement_pause_time_ms',
+				'upcoming_matches_animation_speed', 'upcoming_matches_max_count', 'upcoming_matches_animation_pause',
+				'tabletoperator_use_manual_counting_boards_enabled', 'tabletoperator_with_umpire_enabled',
+				'annoncement_include_event', 'annoncement_include_round', 'annoncement_include_matchnumber',
+				'call_preparation_matches_automatically_enabled','call_next_possible_scheduled_match_in_preparation',
+				'preparation_meetingpoint_enabled','preparation_tabletoperator_setup_enabled'];
+			for (const cb_name of CHECKBOXES) {
+				uiu.qsEach('input[name="' + cb_name + '"]', function(el) {
+					el.checked = curt[cb_name];
+				});
+			}
+			uiu.qsEach('input[name="btp_ip"]', function(el) {
+				el.value = curt.btp_ip;
+			});
 
-		uiu.qsEach('input[name="ticker_url"]', function(el) {
-			el.value = curt.ticker_url;
-		});
-		uiu.qsEach('input[name="ticker_password"]', function(el) {
-			el.value = curt.ticker_password;
-		});
+			uiu.qsEach('input[name="ticker_url"]', function(el) {
+				el.value = curt.ticker_url;
+			});
+			uiu.qsEach('input[name="ticker_password"]', function(el) {
+				el.value = curt.ticker_password;
+			});
+			break;}
+		case 'logo_changed':
+			if(c.val.logo_background_color != undefined) {
+				curt.logo_background_color = c.val.logo_background_color;
+			}
+			if(c.val.logo_foreground_color != undefined) {
+				curt.logo_foreground_color = c.val.logo_foreground_color;
+			}
+			if(c.val.logo_id != undefined) {
+				curt.logo_id = c.val.logo_id;
+			}
+			if(c.val.logo_name != undefined) {
+				curt.logo_name = c.val.logo_name;
+			}
+			ctournament.update_logo();
+			break;
+		case 'court_current_match':
+			//nothing to do here
+			break;
+		case 'tabletoperator_add':
+			//nothing to do here
+			break;
+		case 'tabletoperator_moved_up':
+			//nothing todo here
+			break;
+		case 'tabletoperator_moved_down':
+			//nothing todo here
+			break;
+		case 'tabletoperator_removed':
+			//nothing todo here
+			break;
+		case 'match_setup_update':
+			{
+			const su_match = utils.find(curt.matches, m => m._id === c.val.match_id);
+			if (su_match) {
+				for (const [k, v] of Object.entries(c.val.update)) {
+					const field = k.replace(/^setup\./, '');
+					su_match.setup[field] = v;
+				}
+				ctournament.update_match({val: {match__id: c.val.match_id, match: su_match}});
+			}
+			}
+			break;
+		case 'match_edit':
+			ctournament.update_match(c);
+			break;
+		case 'match_add':
+			const match_id = c.val.match__id;
+			// Find the match
+			const m = utils.find(curt.matches, m => m._id === match_id);
+			if (!m) {
+				ctournament.add_match(c);
+				curt.matches.push(c.val.match);
+				curt.matches = curt.matches.sort( (a, b) => cmatch.cmp_match_order(a, b));
+			} else {
+				ctournament.add_match(c);
+			}
+			break;
+		case 'match_delete':
+			{
+			const match_id = c.val.match__id;
+			const deleted = utils.remove_cb(curt.matches, m => m._id === match_id);
+			if (!deleted) {
+				cerror.silent('Cannot find deleted match ' + match_id);
+			}
+			rerender();
+			}
+			break;
+		case 'courts_changed':
+			curt.courts = c.val.all_courts;
+			rerender();
+			break;
+		case 'court_changed':
+			const court = utils.find(curt.courts, court => court._id === c.val.court_id);
+			if(court) {
+				court.is_active = c.val.is_active;
+			}
+			ctournament.update_court(court);
+			break;
+		case 'locations_changed':
+			curt.locations = c.val.all_locations;
+			rerender();
+			break; 
+		case 'location_changed':
+			const l = utils.find(curt.locations, l => l._id === c.val.location_id);
+			if(l) {
+				l.highlight = c.val.highlight;
+				l.preparation_addition = c.val.preparation_addition;
+				l.meetingpoint_announcement = c.val.meetingpoint_announcement;
+			}
+			ctournament.update_location(c.val.location_id, c.val.highlight, c.val.preparation_addition, c.val.meetingpoint_announcement);
+			break;
+		case 'location_highlight_changed':
+			const old_location_highlight = c.val.old_location_highlight;
+			const new_location_highlight = c.val.new_location_highlight;
 
-		break;}
-	case 'match_add':
-		curt.matches.push(c.val.match);
-		rerender();
-		break;
-	case 'match_edit':
-		{
-		const changed_m = utils.find(curt.matches, m => m._id === c.val.match__id);
-		if (changed_m) {
-			changed_m.setup = c.val.setup;
-		} else {
-			cerror.silent('Cannot find edited match ' + c.val.match__id);
+			curt.matches.forEach((match) => {
+				if(match.setup.highlight == old_location_highlight && match.setup.state === 'preparation'){
+					match.setup.highlight = new_location_highlight;
+					c.val = { match__id: match._id, match}
+					ctournament.update_match(c);
+					ctournament.update_upcoming_match(c);
+				}
+			});
+			break;
+		case 'location_logo_changed':
+			const loc = utils.find(curt.locations, loc => loc._id === c.val.location_id);
+			if(loc) {
+				loc.logo_name = c.val.logo_name;
+				loc.logo_id = c.val.logo_id;
+			}
+			ctournament.update_location_logo(c.val.location_id, loc.logo_id, loc.logo_name);
+			break;
+		case 'match_preparation_call':
+			announcePreparationMatch(c.val.match.setup);
+			curt.matches.forEach((match) => {
+				match.setup.location_id = c.val.location_id;
+			});
+			ctournament.update_match(c);
+			ctournament.update_upcoming_match(c);
+			break;
+		case 'match_called_on_court':
+			announceNewMatch(c.val.setup);
+			break;
+		case 'begin_to_play_call':
+			announceBeginnToPlay(c.val.setup);
+			break;
+		case 'second_call_tabletoperator':
+			announceSecondCallTabletoperator(c.val.setup);
+			break;
+		case 'second_call_umpire':
+			announceSecondCallUmpire(c.val.setup);
+			break;
+		case 'second_call_servicejudge':
+			announceSecondCallServiceJudge(c.val.setup);
+			break;
+		case 'second_call_team_one':
+			announceSecondCallTeamOne(c.val.setup);
+			break;
+		case 'second_call_team_two':
+			announceSecondCallTeamTwo(c.val.setup);
+			break;		
+		case 'second_preparation_call_tabletoperator':
+			announceSecondPreparationCallTabletoperator(c.val.setup);
+			break;
+		case 'second_preparation_call_umpire':
+			announceSecondPreparationCallUmpire(c.val.setup);
+			break;
+		case 'second_preparation_call_servicejudge':
+			announceSecondPreparationCallServiceJudge(c.val.setup);
+			break;
+		case 'second_preparation_call_team_one':
+			announceSecondPreparationCallTeamOne(c.val.setup);
+			break;
+		case 'second_preparation_call_team_two':
+			announceSecondPreparationCallTeamTwo(c.val.setup);
+			break;
+		case 'btp_status':
+			ctournament.btp_status_changed(c);
+			break;
+		case 'ticker_status':
+			ctournament.ticker_status_changed(c);
+			break;
+		case 'bts_status':
+			ctournament.bts_status_changed(c);
+			break;
+		case 'normalization_add':
+			ctournament.add_normalization(c);
+			break;
+		case 'normalization_removed':
+			ctournament.remove_normalization(c);
+			break;
+		case 'advertisement_add':
+			ctournament.add_advertisement(c);
+			break;
+		case 'advertisement_removed':
+			ctournament.remove_advertisement(c);
+			break;
+		//case 'update_player_status':  {
+		//	const cval = c.val;
+		//	const id = cval.match__id;
+//
+		//	// Find the match
+		//	const m = utils.find(curt.matches, m => m._id === id);
+		//	if (!m) {
+		//		cerror.silent('Cannot find match to update player status, ID: ' + JSON.stringify(id));
+		//		return;
+		//	}
+		//	m.btp_winner = cval.btp_winner;
+		//	m.setup = cval.setup;}
+		//	break;	
+		case 'umpires_changed':
+			curt.umpires = c.val.all_umpires;
+			uiu.qsEach('select[name="umpire_name"]', function(select) {
+				cmatch.render_umpire_options(select, select.value);
+			});
+			break;
+		case 'umpire_updated':
+			const umpire = c.val;
+			const u = utils.find(curt.umpires, m => m._id === umpire._id);
+			if (u) {
+				u.last_time_on_court_ts = umpire.last_time_on_court_ts;
+				u.firstname = umpire.firstname;
+				u.surname = umpire.surname;
+				u.name = umpire.name;
+				u.country = umpire.country;
+				u.status = umpire.status;
+				u.court_id = umpire.court_id;
+				u.is_umpire = umpire.is_umpire;
+				u.is_service_judge = umpire.is_service_judge;
+				u.is_planed_as_umpire = umpire.is_planed_as_umpire;
+				u.is_planed_as_service_judge = umpire.is_planed_as_service_judge;
+				u.umpire_on_court = umpire.umpire_on_court;
+				u.service_judge_on_court = umpire.service_judge_on_court;
+				u.umpire_wait = umpire.umpire_wait;
+				u.service_judge_wait = umpire.service_judge_wait;
+				u.umpire_pause = umpire.umpire_pause;
+				u.service_judge_pause = umpire.service_judge_pause;
+				u.inactive_list = umpire.inactive_list;
+			}
+			if(current_view === 'show') {
+				cumpires.ui_status(uiu.qs('.umpire_container'));
+			}
+			ctournament.update_officials();
+			break;
+		case 'umpire_add':
+			const added_umpire = c.val.umpire;
+			curt.umpires.push(added_umpire);
+			if(current_view === 'show') {
+				cumpires.ui_status(uiu.qs('.umpire_container'));
+			}
+			ctournament.update_officials();
+				break;
+		case 'umpire_removed':
+			const removed_umpire = c.val.umpire;
+			const ru = utils.find(curt.umpires, m => m._id === removed_umpire._id);
+			curt.umpires.splice(curt.umpires.indexOf(ru), 1);
+			if(current_view === 'show') {
+				cumpires.ui_status(uiu.qs('.umpire_container'));
+			}
+			ctournament.update_officials();
+			break;
+		case 'official_list_move':
+			const official = utils.find(curt.umpires, u => u._id === c.val.official_id);
+			official[c.val.inactive_list] = null;
+			official[c.val.service_judge_pause] = null;
+			official[c.val.umpire_pause] = null;
+			official[c.val.service_judge_wait] = null;
+			official[c.val.umpire_wait] = null;
+			official[c.val.service_judge_on_court] = null;
+			official[c.val.umpire_on_court] = null;
+			official[c.val.is_planed_as_service_judge] = false;
+			official[c.val.is_planed_as_umpirefrom_list] = false;
+			official[c.val.to_list] = c.val.new_ts;
+			ctournament.update_officials();
+			break;
+		case 'official_edit':
+			const official_edit = utils.find(curt.umpires, u => u._id === c.val.official_id);
+			official_edit[c.val.field] = c.val.value;
+			ctournament.update_officials();
+			break;
+		case 'score':
+			change_score(c.val);
+			// Most dialogs don't show any matches, so do not rerender
+			break;
+		case 'update_btp_settings':
+			if(!curt.btp_settings) {
+				curt.btp_settings = {};
+			}
+			const btp_settings = c.val.btp_settings;
+			for (const [key, value] of Object.entries(btp_settings)) {
+				curt.btp_settings[key] = value;
+			}
+			break;
+		case 'update_display_setting':
+			const updated_setting = c.val.setting;
+			const index = curt.displaysettings.findIndex(m => m.id === updated_setting.id);
+			if (index === -1) {
+				curt.displaysettings.push(updated_setting);
+				curt.displaysettings.sort(utils.cmp_key('id'));
+			} else {
+				curt.displaysettings[index] = updated_setting;
+			}
+			ctournament.update_general_displaysettings(c);
+			break;
+		case 'delete_display_setting':
+			const removed_setting_id = c.val.setting_id;
+			const rs = utils.find(curt.displaysettings, m => m.id === removed_setting_id);
+			curt.displaysettings.splice(curt.displaysettings.indexOf(rs), 1);
+			ctournament.update_general_displaysettings(c);
+			break;
+		case 'display_status_changed':
+			const display_setting = c.val.display_court_displaysetting;
+			var d = utils.find(curt.displays, m => m.client_id === display_setting.client_id);
+			const last_d = {...d};
+			if (!d) {
+				curt.displays[curt.displays.length] = display_setting;
+				curt.displays.sort(utils.cmp_key('client_id'));
+				return;
+			} else {
+				d.court_id = display_setting.court_id;
+				d.displaysetting_id = display_setting.displaysetting_id;
+				d.online = display_setting.online;
+				if(display_setting.battery){
+					d.battery = display_setting.battery;
+				}
+				
+				if(d.displaysetting_id != last_d.displaysetting_id){
+					ctournament.update_general_displaysettings(c);
+				}
+			}
+			if (last_d.online != d.online) {
+				cerror.silent('Display ' + display_setting.client_id + ' is ' + (display_setting.online ? 'online' : 'offline'));
+			}
+			if(!utils.deep_equal(d, last_d)){		
+				ctournament.update_display(d);
+			}
+			break;
+		case 'delete_display':
+			const client_id = c.val.client_id;
+			const display = utils.find(curt.displays, m => m.client_id === client_id);
+			utils.remove(curt.displays, display);
+			ctournament.delete_display(c);
+			break;
+		case 'display_wait_for_done':
+			var d = utils.find(curt.displays, m => m.client_id === c.val.client_id);
+			d.wait_for_ctype = c.val.ctype;
+			if(!d.wait_for_done) {
+				d.wait_for_done = true;
+				ctournament.update_display(d);
+			}
+			break;
+		case 'display_is_done':
+			var d = utils.find(curt.displays, m => m.client_id === c.val.client_id);
+			if(d.wait_for_done && d.wait_for_ctype == c.val.ctype) {
+				d.wait_for_done = false;
+				ctournament.update_display(d);
+			}
+			break;
+		default:
+			cerror.silent('Unsupported change type ' + c.ctype);
 		}
-		rerender();
-		}
-		break;
-	case 'match_delete':
-		{
-		const match_id = c.val.match__id;
-		const deleted = utils.remove_cb(curt.matches, m => m._id === match_id);
-		if (!deleted) {
-			cerror.silent('Cannot find deleted match ' + match_id);
-		}
-		rerender();
-		}
-		break;
-	case 'courts_changed':
-		curt.courts = c.val.all_courts;
-		rerender();
-		break;
-	case 'umpires_changed':
-		curt.umpires = c.val.all_umpires;
-		uiu.qsEach('select[name="umpire_name"]', function(select) {
-			cmatch.render_umpire_options(select, select.value);
-		});
-		break;
-	case 'score':
-		change_score(c.val);
-		// Most dialogs don't show any matches, so do not rerender
-		break;
-	case 'court_current_match':
-		change_current_match(c.val);
-		// Most dialogs don't show any matches, so do not rerender
-		break;
-	case 'btp_status':
-		uiu.text_qs('.btp_status', 'BTP status: ' + c.val);
-		break;
-	case 'ticker_status':
-		uiu.text_qs('.ticker_status', 'Ticker status: ' + c.val);
-		break;
-	default:
-		cerror.silent('Unsupported change type ' + c.ctype);
 	}
-}
 
-return {
-	default_handler,
-	change_current_match,
-};
+	return {
+		default_handler
+	};
 
 })();
 
@@ -146,9 +451,10 @@ return {
 if ((typeof module !== 'undefined') && (typeof require !== 'undefined')) {
 	var cerror = require('./cerror');
 	var cmatch = require('./cmatch');
+	var ctournament = require('./ctournament');
 	var uiu = require('../bup/js/uiu');
 	var utils = require('./utils');
-
+	var cumpires = require('./cumpires');
     module.exports = change;
 }
 /*/@DEV*/

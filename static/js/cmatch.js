@@ -2,6 +2,11 @@
 
 var cmatch = (function() {
 
+var has_resize_event = false;
+var scroll_timer = setTimeout(auto_scroll, 4000);
+var scroll_down = true;
+let is_paused = false;
+
 const OVERRIDE_COLORS_KEYS = ['', 'bg'];
 
 function calc_score_str(match) {
@@ -16,24 +21,172 @@ function calc_section(m) {
 	if (typeof m.team1_won === 'boolean') {
 		return 'finished';
 	}
-	if (m.setup.court_id) {
-		if (!curt.only_now_on_court || m.setup.now_on_court) {
-			return 'court_' + m.setup.court_id;
-		}
+	if (m.setup.court_id && m.setup.now_on_court) {
+		return 'court_' + m.setup.court_id;
 	}
 	return 'unassigned';
 }
 
-function render_match_table_header(table, include_courts) {
+function auto_scroll() {
+	if (is_paused) {
+		return;
+	}
+
+	const scroll_speed = parseInt((curt && curt.upcoming_matches_animation_speed) ? curt.upcoming_matches_animation_speed : 2);
+	if (scroll_speed == 0) {
+		return;
+	}
+
+	const scroll_object = document.querySelectorAll('.main_upcoming');
+	let new_top = 0;
+	let height = 0;
+	let child_higth = 0;
+	
+	scroll_object.forEach((item) =>{
+
+		let old_top = 0;
+		if(item.style.top) {
+			old_top = parseInt(item.style.top);
+		}
+
+		if(scroll_down) {
+			item.style.top = (old_top - scroll_speed)+'px';
+		} else {
+			item.style.top = (old_top + scroll_speed)+'px';
+		}
+
+		new_top = parseInt(item.style.top);
+
+		for (const child of item.children) {
+			child_higth += child.offsetHeight;
+		}
+
+		height = item.offsetHeight;
+	});
+
+	if(new_top >= 0) {
+		scroll_down = true;
+		pause_scroll(); 
+	} else if (height >= child_higth) {
+		scroll_down = false;
+		pause_scroll(); 
+	}
+
+	requestAnimationFrame(auto_scroll); // Verwendet eine gleichmäßige Animation
+}
+function pause_scroll() {
+	is_paused = true;
+	setTimeout(() => {
+		is_paused = false;
+		auto_scroll();
+	}, parseInt((curt && curt.upcoming_matches_animation_pause) ? curt.upcoming_matches_animation_pause : 4) * 1000);
+}
+
+function resize_table(resizable_rows, table_width_factor) {
+	resizable_rows.forEach((row) => {
+		row.fixed_width_elements.forEach((item, index) => {
+			auto_size(item, row.fixed_width[index]);
+		});
+	});
+	
+	resizable_rows.forEach((row) => {
+		let fixed_size = 0;
+
+		for (const child of row.tr.children) {
+			if(!row.variable_width_elements.includes(child)) {
+				fixed_size += child.offsetWidth;
+			}
+		}
+
+		let width_factor_sum = 0;
+		for(const width_factor of row.variable_width_factor) {
+			width_factor_sum += width_factor;
+		}
+
+		row.variable_width_elements.forEach((item, index) => {
+			resizable_auto_size(item, row.variable_width_factor[index] / width_factor_sum, fixed_size, table_width_factor);
+		});
+
+	});
+}
+
+
+
+function resizable_auto_size(parrent_el, factor, fixed_size, table_width_factor) {
+	parrent_el.classList.add("auto_size_parrent");
+	parrent_el.style.width = (table_width_factor *  window.innerWidth - fixed_size) * factor + 'px';
+	parrent_el.setAttribute('resize_factor', factor);
+	parrent_el.setAttribute('fixed_size', fixed_size);
+	parrent_el.setAttribute('table_width_factor', table_width_factor);
+	
+	auto_size(parrent_el, (table_width_factor * window.innerWidth - fixed_size) * factor);
+
+	if(!has_resize_event) {
+		window.addEventListener('resize', (ev) => {
+			const resize_parrents = document.querySelectorAll('.auto_size_parrent');
+			resize_parrents.forEach((item) => {
+
+				const factor = item.getAttribute('resize_factor');
+				const fixed_size = item.getAttribute('fixed_size');
+				const table_width_factor = item.getAttribute('table_width_factor');
+
+				item.style.width = (table_width_factor *  window.innerWidth - fixed_size) * factor + 'px';
+				auto_size(item, (table_width_factor * window.innerWidth - fixed_size) * factor);
+			});
+		});
+		
+		has_resize_event = true;
+	}
+
+}
+
+
+function auto_size(parrent_el, parrent_width)	{	
+	if(!parrent_width) {
+		parrent_width = parrent_el.clientWidth;
+	}
+
+	var child_width = 0;
+	for(const child of parrent_el.children) {
+		child_width += child.offsetWidth + 10;
+	}
+
+	for(const child of parrent_el.children) {
+		var style = window.getComputedStyle(child, null).getPropertyValue('font-size');
+		var fontSize = parseFloat(style);
+		if(!child.hasAttribute('original_font_size')){
+			child.setAttribute('original_font_size', fontSize);
+		}
+
+		const originalFontSize = child.getAttribute('original_font_size');
+
+		child.style.fontSize = Math.min(((fontSize + 1) * parrent_width/child_width), originalFontSize) + 'px';
+	}
+
+	/*
+	if(!has_resize_event) {
+		window.addEventListener('resize', (ev) => {
+			const resize_parrents = document.querySelectorAll('.auto_size_parrent');
+			resize_parrents.forEach((item) => {
+				auto_size(item);
+			});
+		});
+		
+		has_resize_event = true;
+	}
+	*/
+}
+
+
+function render_match_table_header(table) {
 	const thead = uiu.el(table, 'thead');
 	const title_tr = uiu.el(thead, 'tr');
-	uiu.el(title_tr, 'th'); // Buttons holder
-	if (include_courts) {
-		uiu.el(title_tr, 'th', {}, ci18n('Court'));
-	}
-	uiu.el(title_tr, 'th', {}, '#');
+	uiu.el(title_tr, 'th');
+	uiu.el(title_tr, 'th', {}, ci18n('Court'));
+	uiu.el(title_tr, 'th', 'match_num', '#');
 	uiu.el(title_tr, 'th', {}, ci18n('Match'));
 	uiu.el(title_tr, 'th', {
+		class: ('players'),
 		colspan: 3,
 	}, ci18n('Players'));
 	uiu.el(title_tr, 'th', {}, ci18n('Umpire'));
@@ -41,28 +194,55 @@ function render_match_table_header(table, include_courts) {
 	uiu.el(title_tr, 'th', {}, '');
 }
 
-function render_match_row(tr, match, court, style) {
+function render_match_row(tr, match, court, style, show_player_status, show_add_tabletoperator) {	
+	var resizable_elements = {	tr: tr,
+								variable_width_elements : [],
+								variable_width_factor: [],
+								fixed_width_elements: [],
+								fixed_width: []};
+
+	if(!match.setup.is_match) {
+		return;
+	}
+
+
 	if (!court && match.setup.court_id) {
 		court = curt.courts_by_id[match.setup.court_id];
 	}
 
+	const completeMatch = (match.setup.teams[0].players.length >= 1 && match.setup.teams[1].players.length >= 1);
+
+	if (style === 'unasigned') {
+		if(completeMatch){
+			tr.setAttribute('draggable', 'true');
+			tr.addEventListener("dragstart", drag);
+			tr.addEventListener("dragend", dragend);
+			tr.classList.add('complete');
+		}
+	}
+
+	//if(! completeMatch) {
+	//	tr.classList.add('incomplete');
+	//}
+
+	const waitForMatchStart = 	match.setup.called_timestamp && 
+							(	match.network_score == undefined ||
+								( 	match.network_score[0] && 
+									(match.network_score[0][0] + match.network_score[0][1] < 1)
+								)
+							);
+	const activeMatch = court && match.btp_winner != undefined;
 	const setup = match.setup;
-	if (style === 'default' || style === 'plain') {
-		const actions_td = uiu.el(tr, 'td');
-		const edit_btn = uiu.el(actions_td, 'div', {
-			'class': 'vlink match_edit_button',
-			'data-match__id': match._id,
-			'title': ci18n('match:edit'),
-		});
-		edit_btn.addEventListener('click', on_edit_button_click);
 
-		const scoresheet_btn = uiu.el(actions_td, 'div', {
-			'class': 'vlink match_scoresheet_button',
-			'title': ci18n('match:scoresheet'),
-			'data-match__id': match._id,
-		});
-		scoresheet_btn.addEventListener('click', on_scoresheet_button_click);
+	tr.setAttribute('data-match_id', match._id);
+	tr.setAttribute('data-style', style);
 
+	if (style === 'default' || style === 'plain' || style === 'unasigned') {
+		const actions_td = uiu.el(tr, 'td', 'actions');
+		create_match_button(actions_td, 'vlink match_edit_button', 'match:edit', on_edit_button_click, match._id);
+		if(completeMatch) {
+			create_match_button(actions_td, 'vlink match_scoresheet_button', 'match:scoresheet', on_scoresheet_button_click, match._id);
+		}
 		uiu.el(actions_td, 'a', {
 			'class': 'match_rawinfo',
 			'title': ci18n('match:rawinfo'),
@@ -70,100 +250,595 @@ function render_match_row(tr, match, court, style) {
 		});
 	}
 
-	if (style === 'default') {
-		uiu.el(tr, 'td', {}, court ? court.num : '');
+	if (style === 'default' || style === 'unasigned') {
+		const court_number_td = uiu.el(tr, 'td','court_number');
+		if(court) {
+			uiu.el(court_number_td, 'span', 'court_history', court.num);
+		} else if (match.setup.location_id){
+			const location = utils.find(curt.locations, l => l._id === match.setup.location_id);
+			uiu.el(court_number_td, 'span', 'location', "[" + location.short_name + "]");
+		} 
+
+		if(match.setup.location_id) {
+			tr.setAttribute('data-location_id', match.setup.location_id);
+		} else {
+			tr.removeAttribute('data-location_id');
+		}
+
+		if (match.setup.location_id && !(window.localStorage.getItem('show_location_courts_' + match.setup.location_id) !== 'false')) {
+			tr.classList.add('do_not_show');
+		} else {
+			tr.classList.remove('do_not_show');
+		}
 	}
 
-	if (style === 'default' || style === 'plain') {
+
+	if (style === 'plain') {
+		const court_number_td = uiu.el(tr, "td", 'court_number');
+		if(!court)
+			console.warn('no court');
+		if(court.is_active) {
+			create_court_button(court_number_td, 'court_num', 'inactivate_court', on_inactivate_court_button_click, court._id, court.num);
+		} else {
+			create_court_button(court_number_td, 'court_inactive', 'activate_court', on_activate_court_button_click, court._id, '');
+		}
+	}
+
+	if(style === 'public') {
+		const court_number_td = uiu.el(tr, "td", {'class':'court_number', "data-court_id":court._id});
+		if(court.is_active){
+			uiu.el(court_number_td, "div", 'court_num', court.num);
+		} else {
+			uiu.el(court_number_td, "div", 'court_inactive', "");
+		}
+		if (setup.final_call_at) {
+			uiu.el(court_number_td, 'div', 'call_badge call_final', '⚠');
+		} else if (setup.second_call_at) {
+			uiu.el(court_number_td, 'div', 'call_badge call_second', '‼');
+		}
+	}
+
+	if (style === 'default' || style === 'plain' || style === 'unasigned') {
 		const match_str = (setup.scheduled_time_str ? (setup.scheduled_time_str + ' ') : '') + (setup.match_name ? (setup.match_name + ' ') : '') + setup.event_name;
 		uiu.el(tr, 'td', 'match_num', setup.match_num);
-		uiu.el(tr, 'td', {}, match_str);
+		const match_properties_td = uiu.el(tr, 'td', 'match_properties', match_str);
+		if(! completeMatch) {
+			match_properties_td.classList.add('incomplete');
+		}
 	} else if (style === 'upcoming') {
-		uiu.el(tr, 'td', {
-			style: 'min-width: 0.8em;'
-		}, court ? court.num : '');
-		uiu.el(tr, 'td', {
-			style: 'color: #aaa;',
-		}, `#${setup.match_num}`);
-		uiu.el(tr, 'td', {
-			style: 'color: #aaa;',
-		}, setup.scheduled_time_str || '');
-		uiu.el(tr, 'td', {
-			style: 'color: #aaa;',
-		}, setup.event_name);
+		const court_number_td = uiu.el(tr, 'td','court_number_upcoming');
+		if(court) {
+			uiu.el(court_number_td, 'span', 'court_upcoming', court.num);
+		}
+		uiu.el(tr, 'td', 'match_number_upcoming', `#${setup.match_num}`);
+		uiu.el(tr, 'td', 'match_scheduled_upcoming', setup.scheduled_time_str || '');
+		const event_td = uiu.el(tr, 'td', 'match_event_upcoming');
+		uiu.el(event_td, 'span', 'match_event_upcoming', setup.event_name);
 	}
 	const players0 = uiu.el(tr, 'td', {
-		'class': ((match.team1_won === true) ? 'match_team_won' : ''),
+		'class': ((match.team1_won === true) ? 'match_team_won' : 'match_team1'),
 		style: 'text-align: right;',
 	});
-	render_players_el(players0, setup, 0);
-	uiu.el(tr, 'td', 'match_vs', 'v');
-	const players1 = uiu.el(tr, 'td', ((match.team1_won === false) ? 'match_team_won ' : '') + 'match_team2');
-	render_players_el(players1, setup, 1);
-	if (style === 'default' || style === 'plain') {
-		const to_td = uiu.el(tr, 'td');
-		if (setup.umpire_name) {
-			uiu.el(to_td, 'span', {}, setup.umpire_name);
-			if (setup.service_judge_name) {
-				uiu.el(to_td, 'span', {}, '\u200B+');
-				uiu.el(to_td, 'span', {}, setup.service_judge_name);
+
+	if(setup.teams[0].players.length < 1) {
+		players0.classList.add('incomplete');
+	}
+
+	if (style === 'default' || style === 'plain' || style === 'unasigned') {
+		if (show_add_tabletoperator) {
+			if (setup.teams[0].players.length > 0) {
+				create_match_button(players0, 'vlink tabletoperator_add_button', 'tabletoperator:add', on_add_to_tabletoperators_team_one_button_click, match._id);
 			}
 		} else {
-			uiu.el(
-				to_td, 'span',
-				(setup.umpire_name ? ('match_umpire match_umpire_style_' + style) : 'match_no_umpire'),
-				ci18n('No umpire')
-			);
+			create_match_button(players0, 'vlink match_second_call_button', 'match:secondcallteamone', on_second_call_team_one_button_click, match._id);
+		}
+
+		if(style === 'unasigned' && match.setup.highlight >= 1){
+			create_match_button(players0, 'vlink match_second_preparation_call_button', 'match:secondcallteamone', on_second_preparation_call_team_one_button_click, match._id);
+		}
+	}
+	
+	render_players_el(players0, setup, 0, match, show_player_status, style);
+	uiu.el(tr, 'td', 'match_vs', 'v');
+	const players1 = uiu.el(tr, 'td', ((match.team1_won === false) ? 'match_team_won ' : '') + 'match_team2');
+
+	if(setup.teams[1].players.length < 1) {
+		players1.classList.add('incomplete');
+	}
+
+	render_players_el(players1, setup, 1, match, show_player_status, style);
+	if (style === 'default' || style === 'plain' || style === 'unasigned') {
+		if(style === 'unasigned' && match.setup.highlight >= 1){
+			create_match_button(players1, 'vlink match_second_preparation_call_button', 'match:secondcallteamtwo', on_second_preparation_call_team_two_button_click, match._id);
+		}
+		
+		if (show_add_tabletoperator) {
+			if (setup.teams[1].players.length > 0) { 
+				create_match_button(players1, 'vlink tabletoperator_add_button', 'tabletoperator:add', on_add_to_tabletoperators_team_two_button_click, match._id);
+			}
+		} else { 
+			create_match_button(players1, 'vlink match_second_call_button', 'match:secondcallteamtwo', on_second_call_team_two_button_click, match._id);
 		}
 	}
 
-	if (style === 'default' || style === 'plain'/* || style === 'public' WIP */) {
-		const score_td = uiu.el(tr, 'td');
-		if (court && (court.match_id !== match._id) && (typeof match.team1_won !== 'boolean') && setup.umpire_name) {
-			const ready_text = (style === 'public') ? ci18n('Ready') : ci18n(' Ready to start ');
-			uiu.el(score_td, 'span', {}, ready_text);
+	if(style === 'public' || style === 'upcoming') {
+
+		if(style === 'upcoming') {
+			players0.classList.add('match_team1_upcoming');
+			players1.classList.add('match_team2_upcoming');
+		} else {
+			players0.classList.add('match_team1_public');
+			players1.classList.add('match_team2_public');
 		}
-		uiu.el(score_td, 'span', {
-			'class': ('match_score' + ((court && (court.match_id === match._id)) ? ' match_score_current' : '')),
+
+		resizable_elements.variable_width_elements.push(players0);
+		resizable_elements.variable_width_factor.push(1);
+
+		resizable_elements.variable_width_elements.push(players1);
+		resizable_elements.variable_width_factor.push(1);
+	}
+
+	if(style != 'public') {		
+		const to_td = uiu.el(tr, 'td', 'umpire_and_tablet');
+		if (style === 'default' || style === 'plain' || style === 'unasigned') {
+			if (setup.umpire && setup.umpire.name) {
+				const umpire_span = uiu.el(to_td, 'span', 'person');
+				uiu.el(umpire_span, 'div', 'umpire', '');
+				uiu.el(umpire_span, 'span', 'name', setup.umpire.name);
+
+				if(style === 'unasigned' && match.setup.highlight >= 1){
+					create_match_button(umpire_span, 'vlink match_second_preparation_call_button', 'match:secondcallumpire', on_second_preparation_call_umpire_button_click, match._id);
+				}
+				if (style === 'default' || style === 'plain' || style === 'unasigned') {
+					create_match_button(umpire_span, 'vlink match_second_call_button', 'match:secondcallumpire', on_second_call_umpire_button_click, match._id);
+				}
+				if (setup.service_judge && setup.service_judge.name) {
+
+					const service_judge_span = uiu.el(to_td, 'span', 'person');
+					uiu.el(service_judge_span, 'div', 'service_judge', '');
+					uiu.el(service_judge_span, 'span', 'name', setup.service_judge.name);
+					if(style === 'unasigned' && match.setup.highlight >= 1){
+						create_match_button(service_judge_span, 'vlink match_second_preparation_call_button', 'match:secondcallservicejudge', on_second_preparation_call_servicejudge_button_click, match._id);
+					}
+					if (style === 'default' || style === 'plain' || style === 'unasigned') {
+						create_match_button(service_judge_span, 'vlink match_second_call_button', 'match:secondcallservicejudge', on_second_call_servicejudge_button_click, match._id);
+					}
+				}
+			}
+			if (setup.tabletoperators && setup.tabletoperators.length > 0) {
+				const tablet_div = uiu.el(to_td, 'div', 'tablet_operator', '');
+				uiu.el(tablet_div, 'div', 'tablet', '');
+				
+				const operators_div = uiu.el(tablet_div, 'div', 'operators');
+				const person_div = uiu.el(operators_div, 'div', 'person');
+				uiu.el(person_div, 'span', 'match_no_umpire', setup.tabletoperators[0].name );
+
+				if (setup.tabletoperators.length > 1) {
+					uiu.el(person_div, 'span', 'match_no_umpire', ' \u200B/ ');
+					const person2_div = uiu.el(operators_div, 'div', 'person');
+					uiu.el(person2_div, 'span', 'match_no_umpire', setup.tabletoperators[1].name );
+				}
+
+				if(style === 'unasigned' && match.setup.highlight >= 1){
+					create_match_button(tablet_div, 'vlink match_second_preparation_call_button', 'match:secondcaltabletoperator', on_second_preparation_call_tabletoperator_button_click, match._id);
+				}
+
+				if (style === 'default' || style === 'plain' || style === 'unasigned') {
+					create_match_button(tablet_div, 'vlink match_second_call_button', 'match:secondcaltabletoperator', on_second_call_tabletoperator_button_click, match._id);
+				}
+			}
+
+			if (!setup.umpire && (!setup.tabletoperators || setup.tabletoperators.length == 0)) {
+				const no_umpire_span = uiu.el(to_td, 'span', 'person');
+				create_match_button(no_umpire_span, 'vlink no_umpire', 'match:add_officials', on_add_officials_button, match._id);
+				uiu.el(no_umpire_span, 'span', 'match_no_umpire', ci18n('No umpire'));
+			
+			}
+		} else if(style === 'upcoming' && setup.highlight >= 1) {
+			var preparation_container = uiu.el(to_td, 'div', 'preparation_container'); 
+			uiu.el(preparation_container, 'span', 'preparation', 'in Vorbereitung' + (setup.location_id ? "" : "!")); 
+
+			if(setup.location_id) {
+        		const l = utils.find(curt.locations, l => l._id === setup.location_id);
+        		if(l) {
+					uiu.el(preparation_container, 'span', 'preparation', l.preparation_addition); //TODO: Hie die Halle mit ausgeben!
+        		}
+    		}
+			
+		}
+	}	
+		
+
+	if(style != 'upcoming') {
+		const score_td = uiu.el(tr, 'td', 'score');
+		if(style === 'public') {
+			score_td.classList.add('score_public');
+		}
+	
+
+		const score_span = uiu.el(score_td, 'span', {
+			'class': ('match_score' + ((match.setup.now_on_court === true) ? ' match_score_current' : '')),
 			'data-match_id': match._id,
 		}, calc_score_str(match));
+		
+		if(style === 'public' && calc_score_str(match) === '') {
+			if (setup.umpire && setup.umpire.firstname && setup.umpire.surname) {
+				const umpire_icon = uiu.el(score_span, 'div', 'umpire', '');
+				const umpire_name_div = uiu.el(score_span, 'div', 'umpire_name_public');
+				uiu.el(umpire_name_div, 'span', {}, short_name(setup.umpire.firstname, setup.umpire.surname));
+				if (setup.service_judge && setup.service_judge.firstname && setup.service_judge.surname) {
+					uiu.el(umpire_name_div, 'span', {}, ' \u200B+ ');
+					uiu.el(umpire_name_div, 'span', {}, short_name(setup.service_judge.firstname, setup.service_judge.surname));
+				}
+			
+				let parrent_width = score_span.clientWidth;
+				parrent_width -= parseFloat(window.getComputedStyle(score_span, null).getPropertyValue('padding-left'));
+				parrent_width -= parseFloat(window.getComputedStyle(score_span, null).getPropertyValue('padding-right'));
+			
+				//auto_size(umpire_name_div, parrent_width - umpire_icon.offsetWidth - 20);
+				resizable_elements.fixed_width_elements.push(umpire_name_div);
+				resizable_elements.fixed_width.push(parrent_width - umpire_icon.offsetWidth - 20);
+			
+			} else if (setup.tabletoperators && setup.tabletoperators.length > 0){
+				const tablet_icon = uiu.el(score_span, 'div', 'tablet', '');
+				const operators_div = uiu.el(score_span, 'div', 'operators_public')
+				uiu.el(operators_div, 'span', 'match_no_umpire', short_name(setup.tabletoperators[0].firstname, setup.tabletoperators[0].lastname, setup.tabletoperators[0].name));
+				if (setup.tabletoperators.length > 1) {
+					uiu.el(operators_div, 'span', 'match_no_umpire', ' \u200B/ ');
+					uiu.el(operators_div, 'span', 'match_no_umpire', short_name(setup.tabletoperators[1].firstname, setup.tabletoperators[1].lastname, setup.tabletoperators[1].name));
+				}
+			
+				let parrent_width = score_span.clientWidth;
+				parrent_width -= parseFloat(window.getComputedStyle(score_span, null).getPropertyValue('padding-left'));
+				parrent_width -= parseFloat(window.getComputedStyle(score_span, null).getPropertyValue('padding-right'));
+			
+				//auto_size(operators_div, parrent_width - tablet_icon.offsetWidth - 20);
+
+				resizable_elements.fixed_width_elements.push(operators_div);
+				resizable_elements.fixed_width.push(parrent_width - tablet_icon.offsetWidth - 20 - 20);
+			}
+		}
 	}
-	if (style === 'default' || style === 'plain') {
-		const shuttle_td = uiu.el(tr, 'td', 'match_shuttle_count');
+
+	if ((style === 'default' || style === 'plain')) {
+		const shuttle_td = uiu.el(tr, 'td', {'class': 'match_shuttle_count', 'data-match_id': match._id});
+		if(match.shuttle_count) {
+			shuttle_td.classList.add('match_shuttle_count_display_active');
+		}
+
 		uiu.el(shuttle_td, 'span', {
 			'class': (
-				'match_shuttle_count_display' +
-				(match.shuttle_count ? ' match_shuttle_count_display_active' : '')
+				'match_shuttle_count_number'
 			),
 			'data-match_id': match._id,
 		}, match.shuttle_count || '');
+
+		const shuttle_image = uiu.el(shuttle_td, 'div', {
+			'class' : (
+				'match_shuttle_image'
+			),
+			'data-match_id': match._id});
+		if(!match.shuttle_count) {
+			shuttle_image.style.display = 'none';
+		}
+		else {
+			shuttle_image.style.display = 'inline-block';
+		}
 	}
+
+	if ((style === 'default' || style === 'plain' || style === 'unasigned')){
+		const timer_td = uiu.el(tr, 'td', {'class': 'match_timer', 'data-match_id': match._id});
+
+		var timer_state = _extract_match_timer_state(match);
+		var timer = create_timer(timer_state, timer_td, "#cccccc", "#ff0000");
+		if (timer) {
+			active_timers.matches[match._id] = timer;
+		} else {
+			var preparation_timer_state = _extract_preparation_timer_state(match);
+			var preparation_timer = create_timer(preparation_timer_state, timer_td, "#cccccc", "#ff0000");
+			if (preparation_timer) {
+				active_timers.matches[match._id] = preparation_timer;
+			}
+		}
+
+		if(style == 'plain' && match.setup.counting == "3x21" && isMatchOver(match.network_score)) {
+			create_match_button(timer_td, 'vlink match_confirm_button', 'Confirm_Finish', on_match_confirm_button_click, match._id);
+		}
+	}
+
+	if (style === 'default' || style === 'plain' || style === 'unasigned') {
+		const call_td = uiu.el(tr, 'td', 'call_td');
+
+		if (style === 'unasigned' && completeMatch) {
+			const locations = curt.locations;
+			locations.forEach((l)=> {
+				if(window.localStorage.getItem('show_location_courts_' + l._id) !== 'false') {
+					create_match_prepparation_button(call_td, 'vlink match_preparation_call_button', 'match:preparationcall', on_announce_preparation_matchbutton_click, match._id, l);
+				}
+			});
+		} else if ((style === 'default' || style === 'plain') && court) {
+			create_match_button(call_td, 'vlink match_manual_call_button', 'match:manualcall', on_announce_match_manually_button_click, match._id);
+			create_match_button(call_td, 'vlink match_begin_to_play_button', 'match:begintoplay', on_begin_to_play_button_click, match._id);
+		}
+	}
+
+	if(!waitForMatchStart) {
+		uiu.qsEach('.match_second_call_button[data-match_id=' + JSON.stringify(match._id) + ']', (button_el) => {
+			if(match.setup.now_on_court) {
+				button_el.style.visibility = 'hidden';
+			} else {
+				uiu.hide(button_el);
+			}
+		});
+		uiu.qsEach('.match_begin_to_play_button[data-match_id=' + JSON.stringify(match._id) + ']', (button_el) => {
+			if(match.setup.now_on_court) {
+				button_el.style.visibility = 'hidden';
+			} else {
+				uiu.hide(button_el);
+			}
+		});
+		uiu.qsEach('.match_manual_call_button[data-match_id=' + JSON.stringify(match._id) + ']', (button_el) => {
+			if (match.setup.now_on_court) {
+				button_el.style.visibility = 'hidden';
+			} else {
+				uiu.hide(button_el);
+			}
+		});
+	}
+
+	return resizable_elements;
+}
+
+function on_add_officials_button(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'add_officials_to_match',
+			tournament_key: curt.key,
+			match_id: match._id,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+
+function short_name (first_names, last_name, name) {
+	if(first_names && last_name){
+		const split_name = first_names.split(" ");
+		return split_name[0][0] + '. ' + last_name;
+	}
+	return name;
+}
+
+function create_match_button(targetEl, cssClass, title, listener, matchId,) {
+	const btn = uiu.el(targetEl, 'div', {
+		'class': cssClass,
+		'title': ci18n(title),
+		'data-match_id': matchId,
+	});
+	btn.addEventListener('click', listener);
+}
+
+function create_match_prepparation_button(targetEl, cssClass, title, listener, matchId, location){
+	const btn = uiu.el(targetEl, 'div', {
+		'class': cssClass,
+		'title': ci18n(title) + (location.preparation_addition ? ' ' + location.preparation_addition : ''),
+		'data-match_id': matchId,
+		'data-location_id': location._id,
+	});
+
+	uiu.el(btn, 'img', {
+		style: 'height: 1.2em; margin-top: 0.2em;',
+		src: location.logo_id ? '/h/' + encodeURIComponent(curt.key) + '/logo/' + location.logo_id : '/static/icons/preparation.svg',
+		name: 'location_logo_img',
+		'data-match_id': matchId,
+		'data-location_id': location._id
+	});
+
+	btn.addEventListener('click', listener);
 }
 
 function update_match_score(m) {
 	uiu.qsEach('.match_score[data-match_id=' + JSON.stringify(m._id) + ']', function(score_el) {
 		uiu.text(score_el, calc_score_str(m));
 	});
-	uiu.qsEach('.match_shuttle_count_display[data-match_id=' + JSON.stringify(m._id) + ']', function(el) {
-		uiu.text(el, m.shuttle_count || '');
+
+	uiu.qsEach('.match_timer[data-match_id=' + JSON.stringify(m._id) + ']', (timer_td) => {
+		while (timer_td.firstChild) {
+			timer_td.removeChild(timer_td.lastChild);
+		}
+
+		var timer_state = _extract_match_timer_state(m);
+		var timer = create_timer(timer_state, timer_td, "#cccccc", "#ff0000");
+		if (timer) {
+			active_timers.matches[m._id] = timer;
+		} else {
+			var preparation_timer_state = _extract_preparation_timer_state(m);
+			var preparation_timer = create_timer(preparation_timer_state, timer_td, "#cccccc", "#ff0000");
+			if (preparation_timer) {
+				active_timers.matches[match._id] = preparation_timer;
+			}
+		}
+		
+		if(m.setup.counting = "3x21" && isMatchOver(m.network_score)) {
+			create_match_button(timer_td, 'vlink match_confirm_button', 'Confirm_Finish', on_match_confirm_button_click, m._id);
+		}
+	});
+	
+	if(	m.network_score && m.network_score.length > 0 && 
+		m.network_score[0].length > 1 && 
+		(m.network_score[0][0] > 0 || m.network_score[0][1] > 0) ) {
+		uiu.qsEach('.match_second_call_button[data-match_id=' + JSON.stringify(m._id) + ']', (button_el) => {
+			button_el.style.visibility = 'hidden';
+		});
+		uiu.qsEach('.match_begin_to_play_button[data-match_id=' + JSON.stringify(m._id) + ']', (button_el) => {
+			button_el.style.visibility = 'hidden';
+		});
+		uiu.qsEach('.match_manual_call_button[data-match_id=' + JSON.stringify(m._id) + ']', (button_el) => {
+			button_el.style.visibility = 'hidden';
+		});
+	} else {
+		uiu.qsEach('.match_second_call_button[data-match_id=' + JSON.stringify(m._id) + ']', (button_el) => {
+			button_el.style.visibility = 'visible';
+		});
+		uiu.qsEach('.match_begin_to_play_button[data-match_id=' + JSON.stringify(m._id) + ']', (button_el) => {
+			button_el.style.visibility = 'visible';
+		});
+		uiu.qsEach('.match_manual_call_button[data-match_id=' + JSON.stringify(m._id) + ']', (button_el) => {
+			button_el.style.visibility = 'visible';
+		});
+	}
+
+	uiu.qsEach('.match_shuttle_count[data-match_id=' + JSON.stringify(m._id) + ']', function(el) {
 		uiu.setClass(el, 'match_shuttle_count_display_active', !!m.shuttle_count);
+	});
+	
+	uiu.qsEach('.match_shuttle_count_number[data-match_id=' + JSON.stringify(m._id) + ']', function(el) {
+		uiu.text(el, m.shuttle_count || '');
+	});
+
+	uiu.qsEach('.match_shuttle_image[data-match_id=' + JSON.stringify(m._id) + ']', function(shuttle_image) {
+		if(!m.shuttle_count) {
+			shuttle_image.style.display = 'none';
+		}
+		else {
+			shuttle_image.style.display = 'inline-block';
+		}
+			
 	});
 }
 
-function render_players_el(parentNode, setup, team_id) {
-	const team = setup.teams[team_id];
-	if (setup.incomplete) {
-		uiu.el(parentNode, 'span', {}, ci18n('match:incomplete'));
+function on_match_confirm_button_click(e) {
+	const match_id = e.target.getAttribute('data-match_id');
+	const match = utils.find(curt.matches, m => m._id === match_id);
+	if (match) {
+		send({
+			type: 'confirm_match_finished',
+			match_id: match_id,
+			tournament_key: match.tournament_key,
+			court_id: match.setup.court_id
+		}, function (err) {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
 	}
+}
+
+function isMatchOver(sets) {
+    if(!sets){
+		return false;
+	}
+	
+	let winsA = 0;
+    let winsB = 0;
+
+    for (let [scoreA, scoreB] of sets) {
+        if (isSetOver(scoreA, scoreB)) {
+            if (scoreA > scoreB) {
+                winsA++;
+            } else {
+                winsB++;
+            }
+
+            if (winsA === 2 || winsB === 2) {
+                return true;
+            }
+        } else {
+            // Satz ist noch nicht vorbei → Spiel auch nicht
+            return false;
+        }
+    }
+
+    // Falls nicht abgebrochen wurde, prüfen ob überhaupt jemand 2 Sätze gewonnen hat
+    return winsA === 2 || winsB === 2;
+}
+
+function isSetOver(scoreA, scoreB) {
+    const maxScore = 30;
+    const winningScore = 21;
+
+    if (scoreA === maxScore || scoreB === maxScore) return true;
+
+    if ((scoreA >= winningScore || scoreB >= winningScore) && Math.abs(scoreA - scoreB) >= 2) {
+        return true;
+    }
+
+    return false;
+}
+
+
+function render_players_el(parentNode, setup, team_id, match, show_player_status, style) {
+	const team = setup.teams[team_id];
 
 	const nat0 = team.players[0] && team.players[0].nationality;
-	if (!curt.is_nation_competition || !nat0) {
-		uiu.el(parentNode, 'span', {}, team.players.map(p => p.name.replace(' ', '\xa0')).join(' / '));
-		return;
+	if (curt.is_nation_competition && nat0) {
+		cflags.render_flag_el(parentNode, nat0);
 	}
 
-	cflags.render_flag_el(parentNode, nat0);
-	uiu.el(parentNode, 'span', {}, team.players[0].name);
+	if (team.players.length > 0) {
+		if(team.entry_status !== "<none>"){
+			uiu.el(parentNode, 'span', {}, team.entry_status);
+		}
+		render_player_el(parentNode, team.players[0], match._id, setup.now_on_court, show_player_status, style, team.players.length > 1 ? true : false);
+	} else {
+
+		let dependency = '???';
+		if(team_id == 0 && match.setup.links.from1_link) {
+			dependency = match.setup.links.from1_link;
+		}
+		else if(team_id == 1 && match.setup.links.from2_link) {
+			dependency = match.setup.links.from2_link;
+		}
+		else {
+			let match_before = curt.matches.filter(m => {
+
+				return (m.setup.event_name === match.setup.event_name &&
+						(	
+							m.btp_match_ids[0].planning == match.setup.links.from1 ||
+							m.btp_match_ids[0].planning == match.setup.links.from2
+						));
+			});
+
+			let resolved_match = [];
+
+			match_before.forEach(t => {
+				if(t.setup.is_match){
+					resolved_match.push(t);
+				}
+				else {
+					const result = curt.matches.find(m => {
+						return (m.setup.event_name === t.setup.event_name &&
+								m.setup.is_match &&
+								m.setup.links &&
+								t.setup.links &&
+								(	
+									m.setup.links.from1 == t.setup.links.from1 ||
+									m.setup.links.from2 == t.setup.links.from2 
+								));
+					});
+					resolved_match.push(result);
+				}
+			});
+
+			const index = Math.min(resolved_match.length - 1, team_id);
+			
+			if(resolved_match.length >= index && resolved_match[index] && resolved_match[index].setup && resolved_match[index].setup.links) {
+				
+				if(resolved_match[index].setup.links.winner_to && resolved_match[index].setup.links.winner_to == match.btp_match_ids[0].planning) {
+					dependency = ci18n('Winner') + " #" + resolved_match[index].setup.match_num + " - " + resolved_match[index].setup.scheduled_date + " " + resolved_match[index].setup.scheduled_time_str;
+				}
+				else {
+					dependency = ci18n('Loser') + " #" + resolved_match[index].setup.match_num + " - " + resolved_match[index].setup.scheduled_date + " " + resolved_match[index].setup.scheduled_time_str;
+				}
+			}
+		}
+		
+		uiu.el(parentNode, 'span', {}, dependency);
+
+	}
 
 	if (team.players.length > 1) {
 		uiu.el(parentNode, 'span', {}, ' / ');
@@ -172,45 +847,396 @@ function render_players_el(parentNode, setup, team_id) {
 		const p1_el = uiu.el(parentNode, 'span', {
 			'style': 'white-space: pre',
 		});
-		if (nat1 && (nat1 !== nat0)) {
+		if (curt.is_nation_competition && nat1 && (nat1 !== nat0)) {
 			cflags.render_flag_el(p1_el, nat1);
 		}
 
-		const partner_name = team.players[1].name.replace(' ', '\xa0');
-		uiu.el(p1_el, 'span', {}, partner_name);
+		render_player_el(parentNode, team.players[1], match._id, setup.now_on_court, show_player_status, style, true);	
 	}
 }
 
-function prepare_render(t) {
-	t.matches.sort(function(m1, m2) {
-		const time_str1 = m1.setup.scheduled_time_str;
-		const time_str2 = m2.setup.scheduled_time_str;
+function render_player_el(parentNode, player, match_id, now_on_court, show_player_status, style, is_doubles) {
+	let player_status = get_player_status(player, now_on_court, show_player_status);
+	const player_name = (style === 'public' || style === 'upcoming' && is_doubles) ?  short_name(player.firstname, player.lastname) : player.name;
+	let player_element = uiu.el(parentNode, 'span', {
+		'class' : 'person player ' + player_status + (style === 'public' || style === 'upcoming' ? '_public' : ''),
+		'data-btp_id' : player.btp_id, 
+		'data-match_id': match_id,
+	}, player_name.replace(' ', '\xa0'));
 
-		if (time_str1 && !time_str2) {
-			return -1;
-		} else if (time_str2 && !time_str1) {
-			return 1;
+	if(player.check_in_per_match) {
+		if(player_status == "checked_in") {
+			player_element.classList.add("can_check_out");
+		} else if (player_status == "not_checked_in") {
+			player_element.classList.add("can_check_in");
+		}
+	}
+
+
+	player_element.addEventListener("click", (ev) => {
+		if(curt.btp_settings.check_in_per_match) {
+			send({
+				type: 'match_player_check_in',
+				match_id: ev.target.getAttribute("data-match_id"),
+				player_id: ev.target.getAttribute("data-btp_id"),
+				checked_in: (ev.target.classList.contains('not_checked_in') ? true : false),
+				tournament_key: curt.key
+			}, function (err) {
+				if (err) {
+					return cerror.net(err);
+				}
+			});
+		}
+	}, false);
+
+
+	if ((player.now_playing_on_court && player_status != "now_on_court") && player_status != "no_status") {
+		let parts = player.now_playing_on_court.split("_");
+		let court_number = parts[parts.length - 1];
+		uiu.el(player_element, 'div', 'court', court_number);
+	}
+
+	if(player.now_tablet_on_court) {
+		let parts = player.now_tablet_on_court.split("_");
+		let court_number = parts[parts.length - 1];
+		uiu.el(player_element, 'div', 'tablet_inline', court_number);
+	}
+
+	if(show_player_status && player_status != "now_on_court") {
+		var timer_state = _extract_player_timer_state(player);
+		var timer = create_timer(timer_state, player_element, "#ffffff", "#ffffff");
+	}
+}
+
+function get_player_status(player, now_on_court, show_player_status) {
+	let player_status = "";
+	if (!show_player_status) {
+		player_status = "no_status";
+	} else if(now_on_court) {
+		player_status = "now_on_court";
+	} else if (player.now_playing_on_court) {
+		player_status = "now_playing";
+	} else if (player.last_time_on_court_ts && curt && curt.btp_settings && curt.btp_settings.pause_duration_ms > 0 && (Date.now() - player.last_time_on_court_ts < curt.btp_settings.pause_duration_ms)) {
+		player_status = "cooldown";
+	} else if (player.checked_in) {
+		player_status = "checked_in";
+	} else {
+		player_status = "not_checked_in";
+	}
+
+	
+
+	return player_status;
+}
+
+function update_players(m) {
+	if(m.setup.teams) {
+		m.setup.teams.forEach((team) => {
+			if(team.players) {
+				team.players.forEach((player) => {
+					update_player(m._id, player, m.setup.now_on_court, m.btp_winner === undefined);
+				});
+			}
+		});
+	}
+
+}
+
+function update_player(match_id, player, now_on_court, show_player_status) {
+	uiu.qsEach('.player[data-match_id=' + JSON.stringify(match_id) + '][data-btp_id="' + JSON.stringify(player.btp_id) + '"]' , function(player_el) {
+		let player_status = get_player_status(player, now_on_court, show_player_status);
+
+		player_el.classList.remove("now_on_court", "now_playing", "cooldown", "checked_in", "not_checked_in", "no_status", "can_check_out", "can_check_in");
+		player_el.classList.add(player_status);
+		if(player.check_in_per_match) {
+			if(player_status == "checked_in") {
+				player_el.classList.add("can_check_out");
+			} else if (player_status == "not_checked_in") {
+				player_el.classList.add("can_check_in");
+			}
 		}
 
-		const cmp1 = cbts_utils.cmp(m1.setup.scheduled_date, m2.setup.scheduled_date);
-		if (cmp1 != 0) return cmp1;
-
-		if (time_str1 === '00:00' && time_str2 !== '00:00') {
-			return 1;
-		} else if (time_str2 === '00:00' && time_str1 !== '00:00') {
-			return -1;
+		//The only Child should be the now_playing_on_court icon or the now_tablet_on_court icon
+		while (player_el.firstElementChild) {
+			player_el.removeChild(player_el.lastElementChild);
 		}
 
-		const cmp2 = cbts_utils.cmp(time_str1, time_str2);
-		if (cmp2 != 0) return cmp2;
-
-		if ((m1.match_order !== undefined) && (m2.match_order !== undefined)) {
-			const cmp_result = cbts_utils.cmp(m1.match_order, m2.match_order);
-			if (cmp_result != 0) return cmp_result;
+		if ((player.now_playing_on_court && player_status != "now_on_court") && player_status != "no_status") {
+			let parts = player.now_playing_on_court.split("_");
+			let court_number = parts[parts.length - 1];
+			uiu.el(player_el, 'div', 'court', court_number);
+		}
+	
+		if(player.now_tablet_on_court) {
+			let parts = player.now_tablet_on_court.split("_");
+			let court_number = parts[parts.length - 1];
+			uiu.el(player_el, 'div', 'tablet_inline', court_number);
 		}
 
-		return cbts_utils.cmp(m1.setup.match_num, m2.setup.match_num);
+		if(show_player_status && player_status != "now_on_court") {
+			var timer_state = _extract_player_timer_state(player);
+			var timer = create_timer(timer_state, player_el, "#ffffff", "#ffffff");
+		}
+
 	});
+}
+
+	function remove_match_from_gui(m, old_section) {
+		switch (old_section) {
+			case 'finished':
+			case 'unassigned':
+				uiu.qsEach('.match[data-match_id=' + JSON.stringify(m._id) + ']', (match_row_el) => {
+					match_row_el.remove();
+				});
+				break;
+			default:
+				const main_container = document.getElementsByClassName('main_upcoming');
+				if (main_container.length > 0){
+					uiu.qsEach('.court_row[data-court_id=' + JSON.stringify(m.setup.court_id) + ']', (match_row_el) => {
+						const c = utils.find(curt.courts, c => c._id === m.setup.court_id);
+						match_row_el.innerHTML = "";
+						render_empty_court_row(match_row_el, c, 'public', false);
+					});
+				} else {
+					uiu.qsEach('.court_row[data-court_id=' + JSON.stringify(old_section.slice(6, old_section.length)) + ']', (match_row_el) => {
+						const c = utils.find(curt.courts, c => c._id === m.setup.court_id);
+						match_row_el.innerHTML = "";
+						render_empty_court_row(match_row_el, c, 'plain', true);
+					});
+				}
+				break;
+		}
+	}
+
+function add_match(m, section) {
+	insert_new_match_row(m, section);
+}
+	
+function insert_new_match_row(m, section) {
+	switch (section) {
+		case 'finished':
+			uiu.qsEach('.finished_container', (finished_container) => {
+				const tbody = finished_container.querySelector('.match_table > tbody');
+				const match_row_el = uiu.el(tbody, 'tr', {'class' : 'match highlight_' + m.setup.highlight , 'data-match_id': m._id});
+				render_match_row(match_row_el, m, null, 'default', false, curt.tabletoperator_enabled);
+				for (const child of tbody.children) {
+					const child_btp_id = child.dataset.match_id;
+					const child_match = utils.find(curt.matches, m => 'btp_'+m.btp_id === child_btp_id);
+					if(child_match) {
+						if(cmp_end_ts_match_order(m, child_match) < 0) {
+							tbody.insertBefore(match_row_el, child);
+							break;
+						}
+					}
+				}
+			});
+			break;
+		case 'unassigned':
+			uiu.qsEach('.unassigned_container', (unassigned_container) => {
+				const tbody = unassigned_container.querySelector('.match_table > tbody');
+				const match_row_el = uiu.el(tbody, 'tr', {'class' : 'match highlight_' + m.setup.highlight , 'data-match_id': m._id});
+				render_match_row(match_row_el, m, null, 'unasigned', true, curt.tabletoperator_enabled);
+				for (const child of tbody.children) {
+					const child_btp_id = child.dataset.match_id;
+					const child_match = utils.find(curt.matches, m => 'btp_'+m.btp_id === child_btp_id);
+					if(child_match) {
+						if(cmp_scheduled_match_order(m, child_match) < 0) {
+							tbody.insertBefore(match_row_el, child);
+							break;
+						}
+					}
+				}
+			});
+			break;
+		default:
+			const court = utils.find(curt.courts, c => c._id === m.setup.court_id);
+			uiu.qsEach('.court_row[data-court_id=' + JSON.stringify(m.setup.court_id) + ']', (match_row_el) => {
+				match_row_el.innerHTML = "";
+				const closest = match_row_el.closest('.main_upcoming');
+				if(Boolean(closest)) {
+					render_match_row(match_row_el, m, court, 'public', );
+				} else {
+					render_match_row(match_row_el, m, court, 'plain', false, false);
+				}
+			});
+			break;
+	}
+}
+
+function update_match_row(m, new_section) {
+	uiu.qsEach('.match[data-match_id=' + JSON.stringify(m._id) + ']', (match_row_el) => {
+		match_row_el.innerHTML = '';
+		
+		switch (new_section) {
+			case 'finished':
+				render_match_row(match_row_el, m, null, 'default', false, curt.tabletoperator_enabled);
+				break;
+			case 'unassigned':
+				match_row_el.setAttribute('class', 'match highlight_' + (m.setup.highlight ? m.setup.highlight : 0));
+				render_match_row(match_row_el, m, null, 'unasigned', true, curt.tabletoperator_enabled);
+				break;
+			default:
+				const court = utils.find(curt.courts, c => c._id === m.setup.court_id);	
+				const closest = match_row_el.closest('.main_upcoming');
+				if(Boolean(closest)) {
+					render_match_row(match_row_el, m, court, 'public');
+				} else {
+					render_match_row(match_row_el, m, court, 'plain', false, false);
+				}
+				break;
+		}
+	});
+}
+
+function update_match(m, old_section, new_section) {	
+	if(old_section != new_section) {
+		remove_match_from_gui(m, old_section);
+		insert_new_match_row(m, new_section);
+	} else {
+		update_match_row(m, new_section);
+	}
+}
+
+var active_timers = {'matches': {}, 'players' : {}};
+
+function create_timer(timer_state, parent, default_color, exigent_color) {
+	
+	if (!timer_state) {
+		return;
+	}
+
+	var tv = timer.calc(timer_state);
+		
+	if(!tv || !tv.visible){
+		return;
+	}
+
+
+	var bgColor = timer_state.bgColor;
+	let el = uiu.el(parent, 'div', { class: 'timer', style: ('background-color:' + bgColor +'; color:' + default_color +';')}, tv.str);
+	
+	var tobj = {}
+
+	var update = function() {
+		var tv = timer.calc(timer_state);
+		var visible = tv.visible;
+
+		uiu.text (el, tv.str);
+		if(tv.exigent && exigent_color){
+			el.style.color = exigent_color;
+		}
+
+		if (visible && tv.next) {
+			tobj.timeout = setTimeout(update, tv.next);
+			el.style.display = "inline-block";
+		} else {
+			tobj.timeout = null;
+			el.style.display = "none";
+			if(!curt.btp_settings.check_in_per_match && parent.querySelector('div.tablet_inline') === null) {
+				parent.classList.remove("not_checked_in", "cooldown");
+				parent.classList.add("checked_in");
+			}
+		}
+	};
+
+	update();
+
+	return tobj;
+}
+
+function _extract_player_timer_state(player) {
+	let s = {};
+	s.settings = {};
+	s.settings.negative_timers = false;
+	s.lang = "de";
+	s.timer = {};
+	s.timer.duration = (curt &&  curt.btp_settings && curt.btp_settings.pause_duration_ms) ? curt.btp_settings.pause_duration_ms : 0;
+	s.timer.start = (player.last_time_on_court_ts ? player.last_time_on_court_ts : false);
+	s.timer.upwards = false;
+	s.timer.exigent = false;
+
+	if (player.tablet_break_active) {
+		s.bgColor = "#0000ff";
+	} else {
+		s.bgColor = "#ff0000";
+	}
+	
+	return s;
+}
+
+function _extract_preparation_timer_state(match) {
+	let s = {};
+	s.settings = {};
+	s.settings.negative_timers = false;
+	s.lang = "de";
+	s.timer = {};
+	//s.timer.duration = curt.btp_settings.pause_duration_ms;
+	s.timer.start = (match.setup.preparation_call_timestamp ? match.setup.preparation_call_timestamp : false);
+	s.timer.upwards = true;
+	s.timer.exigent = false;
+	s.bgColor = "#00000033";
+	return s;
+}
+
+function _extract_match_timer_state(match) {
+	var presses = match.presses;
+
+	let s = {};
+	s.settings = {};
+	s.settings.negative_timers = true;
+	s.lang = "de"; //TODO: Use the language of the BTS Settings
+
+	var rs = calc.remote_state(s, match.setup, presses);
+	return rs;
+}
+
+function cmp_scheduled_match_order(m1, m2) {
+	const time_str1 = m1.setup.scheduled_time_str;
+	const time_str2 = m2.setup.scheduled_time_str;
+
+	if (time_str1 && !time_str2) {
+		return -1;
+	} else if (time_str2 && !time_str1) {
+		return 1;
+	}
+
+	const cmp1 = cbts_utils.cmp(m1.setup.scheduled_date, m2.setup.scheduled_date);
+	if (cmp1 != 0) return cmp1;
+	
+	if (time_str1 === '00:00' && time_str2 === '00:00') {
+		return cbts_utils.cmp(m1.setup.match_num, m2.setup.match_num);
+	} else if (time_str1 === '00:00' && time_str2 !== '00:00') {
+		return 1;
+	} else if (time_str2 === '00:00' && time_str1 !== '00:00') {
+		return -1;
+	}
+
+	const cmp2 = cbts_utils.cmp(time_str1, time_str2);
+	if (cmp2 != 0) return cmp2;
+
+	if ((m1.match_order !== undefined) && (m2.match_order !== undefined)) {
+		const cmp_result = cbts_utils.cmp(m1.match_order, m2.match_order);
+		if (cmp_result != 0) return cmp_result;
+	}
+
+	return cbts_utils.cmp(m1.setup.match_num, m2.setup.match_num);
+}
+
+function cmp_end_ts_match_order(m1, m2) {
+	var m1_ts = m1.end_ts;
+	var m2_ts = m2.end_ts;
+	
+	if(!m1_ts) {
+		m1_ts = zoned_time_to_utc_timestamp(m1.setup.scheduled_date, m1.setup.scheduled_time_str, 'Europe/Berlin') / 2;
+	} 
+	if(!m2_ts) {
+		m2_ts = zoned_time_to_utc_timestamp(m2.setup.scheduled_date, m2.setup.scheduled_time_str, 'Europe/Berlin') / 2;
+	} 
+	return m1_ts - m2_ts
+}
+
+function prepare_render(t) {
+	t.matches.sort((m1, m2) => {return cmp_scheduled_match_order(m1, m2)});
 
 	t.courts_by_id = {};
 	for (const c of t.courts) {
@@ -220,16 +1246,241 @@ function prepare_render(t) {
 
 function on_edit_button_click(e) {
 	const btn = e.target;
-	const match_id = btn.getAttribute('data-match__id');
+	const match_id = btn.getAttribute('data-match_id');
 	ui_edit(match_id);
 }
 
 function on_scoresheet_button_click(e) {
 	const btn = e.target;
-	const match_id = btn.getAttribute('data-match__id');
+	const match_id = btn.getAttribute('data-match_id');
 	ui_scoresheet(match_id);
 }
+function on_announce_preparation_matchbutton_click(e) {
+	const match = fetchMatchFromEvent(e);
+	const location = fetchLocationFromEvent(e);
 
+	if (match != null && location != null) {
+		send({
+			type: 'match_preparation_call',
+			match: match,
+			location_id : location._id,
+			tournament_key: match.tournament_key,
+		}, function (err) {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+function on_add_to_tabletoperators_team_one_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	ctabletoperator.add_to_tabletoperator(match, 0)
+}
+function on_add_to_tabletoperators_team_two_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	ctabletoperator.add_to_tabletoperator(match,1)
+}
+
+
+function on_second_call_team_one_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'second_call_team_one',
+			tournament_key: curt.key,
+			setup: match.setup,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+function on_second_call_team_two_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'second_call_team_two',
+			tournament_key: curt.key,
+			setup: match.setup,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+function on_second_preparation_call_team_one_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'second_preparation_call_team_one',
+			tournament_key: curt.key,
+			setup: match.setup,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+function on_second_preparation_call_team_two_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'second_preparation_call_team_two',
+			tournament_key: curt.key,
+			setup: match.setup,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+function on_second_call_tabletoperator_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'second_call_tabletoperator',
+			tournament_key: curt.key,
+			setup: match.setup,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}	
+function on_second_preparation_call_tabletoperator_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'second_preparation_call_tabletoperator',
+			tournament_key: curt.key,
+			setup: match.setup,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+function on_second_call_umpire_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'second_call_umpire',
+			tournament_key: curt.key,
+			setup: match.setup,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+
+
+function on_second_preparation_call_umpire_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'second_preparation_call_umpire',
+			tournament_key: curt.key,
+			setup: match.setup,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+
+function on_second_call_servicejudge_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'second_call_servicejudge',
+			tournament_key: curt.key,
+			setup: match.setup,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+
+
+function on_second_preparation_call_servicejudge_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'second_preparation_call_servicejudge',
+			tournament_key: curt.key,
+			setup: match.setup,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+
+
+
+function on_begin_to_play_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'begin_to_play_call',
+			tournament_key: curt.key,
+			setup: match.setup,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+
+function on_announce_match_manually_button_click(e) {
+	const match = fetchMatchFromEvent(e);
+	if (match != null) {
+		send({
+			type: 'announce_match_manually',
+			tournament_key: curt.key,
+			match: match,
+		}, err => {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+	}
+}
+function fetchMatchFromEvent(e) {
+	const btn = e.target;
+	const match_id = btn.getAttribute('data-match_id');
+	const match = utils.find(curt.matches, m => m._id === match_id);
+	if (!match) {
+		cerror.silent('Match ' + match_id + ' konnte nicht gefunden werden');
+		return null;
+	} else {
+		return match;
+	}
+}
+function fetchLocationFromEvent(e) {
+	const btn = e.target;
+	const location_id = btn.getAttribute('data-location_id');
+	const location = utils.find(curt.locations, l => l._id === location_id);
+	if (!location) {
+		cerror.silent('Location ' + location_id + ' konnte nicht gefunden werden');
+		return null;
+	} else {
+		return location;
+	}
+}
 function _nation_team_name(nat0, nat1) {
 	if (nat1 && nat0 && (nat0 != nat1)) {
 		return countries.lookup(nat0) + ' / ' + countries.lookup(nat1);
@@ -238,6 +1489,50 @@ function _nation_team_name(nat0, nat1) {
 		return countries.lookup(nat0);
 	}
 	return '';
+}
+
+function _update_setup(setup, d) {
+	if(!setup) {
+		return _make_setup(d);
+	}
+
+	const result = setup;
+
+	let override_colors = undefined;
+	if (d.override_colors_checkbox) {
+		override_colors = {};
+		for (let team_id = 0;team_id < 2;team_id++) {
+			const team_override_colors = {};
+			for (const key of OVERRIDE_COLORS_KEYS) {
+				override_colors[key + team_id] = d[`override_colors_${team_id}_${key}`];
+			}
+		}
+	}
+
+	result.court_id           = d.court_id;
+	result.now_on_court       = !! d.now_on_court;
+
+	if(!d.umpire_name) {
+		delete result.umpire;
+	}
+
+	if(!d.service_judge_name) {
+		delete result.service_judge;
+	}
+
+	for (const u of curt.umpires) {
+		if (u.name === d.umpire_name) {
+			result.umpire = u;
+		}
+
+		if (u.name === d.service_judge_name) {
+			result.service_judge = u;
+		}
+	}
+
+	result.override_colors    = override_colors;
+
+	return result;
 }
 
 function _make_setup(d) {
@@ -290,7 +1585,8 @@ function _cancel_ui_edit() {
 	}
 	cbts_utils.esc_stack_pop();
 	uiu.remove(dlg);
-	ctournament.ui_show();
+
+	crouting.set('t/:key/', { key: curt.key });
 }
 
 function _delete_match_btn_click(e) {
@@ -308,13 +1604,36 @@ function _delete_match_btn_click(e) {
 		_cancel_ui_edit();
 	});
 }
+	function _finish_ui_edit(e) {
+		const match_id = e.target.getAttribute('data-match_id');
+		const match = utils.find(curt.matches, m => m._id === match_id);
+		if (match) {
+			send({
+				type: 'confirm_match_finished',
+				match_id: match_id,
+				tournament_key: match.tournament_key,
+				court_id: match.setup.court_id
+			}, function (err) {
+				if (err) {
+					return cerror.net(err);
+				}
+			});
+		}
+		_cancel_ui_edit();
+	}
 
 function ui_edit(match_id) {
-	const match = utils.find(curt.matches, m => m._id === match_id);
+	const match = structuredClone(utils.find(curt.matches, m => m._id === match_id));
+	let old_court = structuredClone(match.setup.court_id);
 	if (!match) {
 		cerror.silent('Match ' + match_id + ' konnte nicht gefunden werden');
 		return;
 	}
+
+	if(!old_court) {
+		old_court = "not_on_court"
+	}
+
 	crouting.set('t/' + curt.key + '/m/' + match_id + '/edit', {}, _cancel_ui_edit);
 
 	cbts_utils.esc_stack_push(_cancel_ui_edit);
@@ -346,6 +1665,7 @@ function ui_edit(match_id) {
 		uiu.el(sendbtp_label, 'input', {
 			type: 'checkbox',
 			name: 'btp_update',
+			checked: 'true',
 		});
 		sendbtp_label.appendChild(document.createTextNode('auch in BTP ändern'));
 	}
@@ -356,12 +1676,13 @@ function ui_edit(match_id) {
 	}, ci18n('Change'));
 
 	form_utils.onsubmit(form, function(d) {
-		const setup = _make_setup(d);
+		match.setup = _update_setup(match.setup, d);
 		btn.setAttribute('disabled', 'disabled');
 		send({
 			type: 'match_edit',
 			id: d.match_id,
-			setup,
+			match,
+			old_court,
 			tournament_key: curt.key,
 			btp_update: (curt.btp_enabled && !! d.btp_update),
 		}, function match_edit_callback(err) {
@@ -378,6 +1699,13 @@ function ui_edit(match_id) {
 		'data-match_id': match_id,
 	}, ci18n('match:edit:delete'));
 	delete_btn.addEventListener('click', _delete_match_btn_click);
+
+	const finish_btn = uiu.el(buttons, 'span', {
+		'class': 'match_cancel_link vlink',
+		'data-match_id': match._id
+	}, ci18n('Confirm_Finish'));
+	finish_btn.addEventListener('click', _finish_ui_edit);
+
 	const cancel_btn = uiu.el(buttons, 'span', 'match_cancel_link vlink', ci18n('Cancel'));
 	cancel_btn.addEventListener('click', _cancel_ui_edit);
 }
@@ -471,78 +1799,361 @@ crouting.register(/t\/([a-z0-9]+)\/m\/([-a-zA-Z0-9_ ]+)\/scoresheet$/, function(
 	ui_scoresheet(match_id);
 }));
 
-function render_match_table(container, matches, include_courts) {
+function render_match_table(container, matches, style, show_player_status, show_add_tabletoperator) {
+	if(!show_player_status)
+	{
+		show_player_status = false;
+	}
+
+	if(! style) {
+		style = 'default';
+	}
+	
 	const table = uiu.el(container, 'table', 'match_table');
-	render_match_table_header(table, include_courts);
+	render_match_table_header(table, true);
 	const tbody = uiu.el(table, 'tbody');
 
 	for (const m of matches) {
-		const tr = uiu.el(tbody, 'tr');
-		render_match_row(tr, m, null, include_courts ? 'default' : 'plain');
+		if(m.setup.is_match) {
+			const tr = uiu.el(tbody, 'tr', {'class' : 'match highlight_' + m.setup.highlight , 'data-match_id': m._id});
+			render_match_row(tr, m, null, style, show_player_status, show_add_tabletoperator);
+		}
 	}
+
 }
 
 function render_unassigned(container) {
 	uiu.empty(container);
-	uiu.el(container, 'h3', {}, ci18n('Unassigned Matches'));
+	uiu.el(container, 'h3', 'section', ci18n('Unassigned Matches'));
 
 	const unassigned_matches = curt.matches.filter(m => calc_section(m) === 'unassigned');
-	render_match_table(container, unassigned_matches, curt.only_now_on_court);
+	render_match_table(container, unassigned_matches, 'unasigned', true, curt.tabletoperator_enabled);
 }
 
 function render_upcoming_matches(container) {
-	const UPCOMING_MATCH_COUNT = 10;
+	console.warn("Rendere upcoming");
+	const UPCOMING_MATCH_COUNT = parseInt(curt.upcoming_matches_max_count ? curt.upcoming_matches_max_count : 15);
 	uiu.empty(container);
 
-	uiu.el(container, 'h3', {
+	uiu.el(container, 'h2', {
 		style: 'text-align: center;',
-	}, ci18n('Next Matches'));
+	}, ci18n('Next Matches'));	
 
 	const upcoming_table = uiu.el(container, 'table', 'upcoming_table');
+	const upcoming_tbody = uiu.el(upcoming_table, 'tbody', 'upcoming_tbody');
 	const unassigned_matches = curt.matches.filter(m => calc_section(m) === 'unassigned');
+	
+	
+	var resizable_rows = [];
 	for (const match of unassigned_matches.slice(0, UPCOMING_MATCH_COUNT)) {
-		const tr = uiu.el(upcoming_table, 'tr', {
+		const tr = uiu.el(upcoming_tbody, 'tr', {
 			style: 'padding-top: 1em;',
 		});
-		render_match_row(tr, match, null, 'upcoming');
+		resizable_rows.push(render_match_row(tr, match, null, 'upcoming'));
 	}
+
+	resize_table(resizable_rows, 0.98);
+
+	const qr = uiu.el(container, 'img', {
+		type: 'img',
+		id: 'main_q_code_upcoming',
+		src: curt.mainQrCode,
+		style: 'position: absolute; right: 20px; bottom: 20px;'
+	});
 }
+
+
+function zoned_time_to_utc_timestamp(dateStr, timeStr, timeZone) {
+    if (!dateStr) {
+		return 0;
+	}
+
+	if (!timeStr) {
+		return 0;
+	}
+
+	const [year, month, day] = dateStr.split('-').map(Number);
+    const [hour, minute] = timeStr.split(':').map(Number);
+
+    // "Guess": als ob die eingegebene Zeit UTC wäre
+    const utcGuessMs = Date.UTC(year, month - 1, day, hour, minute, 0);
+
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hour12: false,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    });
+
+    // Wie sieht dieser utcGuess in der Ziel-Zeitzone aus?
+    const parts = Object.fromEntries(
+        formatter.formatToParts(new Date(utcGuessMs)).map(p => [p.type, p.value])
+    );
+
+    // Diese "Zonen-Zeit" interpretieren wir als UTC, um den Offset zu bekommen
+    const asIfUtcMs = Date.UTC(
+        Number(parts.year),
+        Number(parts.month) - 1,
+        Number(parts.day),
+        Number(parts.hour),
+        Number(parts.minute),
+        Number(parts.second)
+    );
+
+    // Offset = (Zonen-Darstellung als UTC) - (echte UTC)
+    const offsetMs = asIfUtcMs - utcGuessMs;
+
+    // Gesucht: Zeitpunkt, der in der Zone die gewünschte lokale Zeit ergibt
+    return utcGuessMs - offsetMs;
+}
+
 
 function render_finished(container) {
 	uiu.empty(container);
-	uiu.el(container, 'h3', {}, ci18n('Finished Matches'));
+	uiu.el(container, 'h3', 'section', ci18n('Finished Matches'));
 
-	const matches = curt.matches.filter(m => calc_section(m) === 'finished');
-	render_match_table(container, matches, true);
+	const matches = curt.matches.filter(m => calc_section(m) === 'finished').sort((a, b) => {
+		var a_ts = a.end_ts;
+		var b_ts = b.end_ts;
+		
+		if(!a_ts) {
+			a_ts = zoned_time_to_utc_timestamp(a.setup.scheduled_date, a.setup.scheduled_time_str, 'Europe/Berlin');
+		} 
+		if(!b_ts) {
+			b_ts = zoned_time_to_utc_timestamp(b.setup.scheduled_date, b.setup.scheduled_time_str, 'Europe/Berlin');
+		} 
+		return b_ts - a_ts
+	});
+	render_match_table(container, matches, 'default', false, curt.tabletoperator_enabled);
 }
 
 function render_courts(container, style) {
 	style = style || 'plain';
 	uiu.empty(container);
+	if(style === 'public') {
+		uiu.el(container, 'h2', {}, 'Aktuelle Spiele');
+	}
 	const table = uiu.el(container, 'table', 'match_table');
 	const tbody = uiu.el(table, 'tbody');
+	var resizable_rows = [];
 	for (const c of curt.courts) {
 		const expected_section = 'court_' + c._id;
-		const court_matches = curt.matches.filter(m => calc_section(m) === expected_section);
+		var court_matches = curt.matches.filter(m => calc_section(m) === expected_section);
+		if (style === 'public' && curt.courts_to_call_enabled) {
+			court_matches = court_matches.filter(m => m.setup.called_to_court);
+		}
 
-		const tr = uiu.el(tbody, 'tr');
+		const tr = uiu.el(tbody, 'tr', {class:"court_row", "data-court_id":c._id, "data-location_id":c.location_id} );
 		const rowspan = Math.max(1, court_matches.length);
-		uiu.el(tr, 'th', {
-			'class': 'court_num',
-			style: ((style === 'public') ? 'padding-right: 0.5em' : ''),
-			rowspan,
-			title: c._id,
-		}, c.num);
+		//uiu.el(tr, 'th', {
+		//	'class': 'court_num',
+		//	rowspan,
+		//	title: c._id,
+		//}, c.num);
+
+		//const court_number_td = uiu.el(tr, "td", 'court_number');
+		//uiu.el(court_number_td, "div", "court_num", c.num);
+
 
 		if (court_matches.length === 0) {
-			uiu.el(tr, 'td', {colspan: 9}, '');
+			render_empty_court_row(tr, c, style, true);
 		} else {
 			let i = 0;
 			for (const cm of court_matches) {
 				const my_tr = (i > 0) ? uiu.el(tbody, 'tr') : tr;
-				render_match_row(my_tr, cm, c, style);
+				resizable_rows.push(render_match_row(my_tr, cm, c, style));
 				i++;
 			}
+		}
+
+		if(!(window.localStorage.getItem('show_location_courts_' + c.location_id) !== 'false')) {
+			tr.classList.add('do_not_show');
+		}
+	}
+
+	if(style === 'public') {
+		resize_table(resizable_rows, 0.98);
+	}
+}
+
+function update_tables(location_id, enabled) {
+	// Alle Elemente mit dem passenden data-location_id Attribut finden
+	const elements = document.querySelectorAll(`[data-location_id="${location_id}"]`);
+
+	elements.forEach(el => {
+		if (enabled === true) {
+			el.classList.remove('do_not_show');
+		} else {
+			el.classList.add('do_not_show');
+		}
+	});
+}
+
+function render_empty_court_row(tr, court, style, is_droppable) {
+	tr.setAttribute("data-style", style);
+	
+	if (!court) {
+		console.warn('court is not set!');
+
+	}
+
+	const is_active = court.is_active;
+	
+	if(style != 'public') {
+		const lead_target_td = uiu.el(tr, 'td', {class: (is_active ? "droppable " : "inactive " ) + "actions", colspan: 1, "data-court_id":court._id, "data-state" : (is_active ? "droppable" : "inactive" )}, '');
+
+		if(is_active){
+			lead_target_td.addEventListener("drop", drop);
+    		lead_target_td.addEventListener("dragover", allowDrop);
+		}
+
+		const court_number_td = uiu.el(tr, "td", {'class':'court_number', "data-court_id":court._id, "data-state" : (is_active ? "droppable" : "inactive")});
+		if(is_active) {
+			create_court_button(court_number_td, 'court_num', 'inactivate_court', on_inactivate_court_button_click, court._id, court.num);
+		} else {
+			create_court_button(court_number_td, 'court_inactive', 'activate_court', on_activate_court_button_click, court._id, '');
+		}
+
+		const target_td = uiu.el(tr, 'td', {class: 'empty_element', colspan: 11, "data-court_id":court._id}, '');
+		if(is_active) {
+			court_number_td.classList.add('droppable');
+			target_td.classList.add('droppable');
+			target_td.setAttribute('data-state', 'droppable')
+
+			court_number_td.addEventListener("drop", drop);
+			court_number_td.addEventListener("dragover", allowDrop);
+			target_td.addEventListener("drop", drop);
+    		target_td.addEventListener("dragover", allowDrop);
+		} else {
+			court_number_td.classList.add('inactive');
+			target_td.classList.add('inactive');
+
+			target_td.setAttribute('data-state', 'inactive')
+		}
+	} else {
+		const court_number_td = uiu.el(tr, "td", {'class':'court_number', "data-court_id":court._id});
+		if(is_active){
+			uiu.el(court_number_td, "div", 'court_num', court.num);
+		} else {
+			uiu.el(court_number_td, "div", 'court_inactive', "");
+		}
+
+		const target_td = uiu.el(tr, 'td', {class: 'empty_element', colspan: 11, "data-court_id":court._id}, '');
+	}
+}
+
+function update_court(court) {
+	const tr = uiu.qs(`tr[data-court_id="${court._id}"]`);
+	const match_id = tr.getAttribute('data-match_id');
+	const style = tr.getAttribute("data-style");
+	tr.innerHTML = "";
+	if(match_id == null) {
+		render_empty_court_row(tr, court, style, true);
+		return;
+	}
+	const m = utils.find(curt.matches, m => m._id === match_id);
+	render_match_row(tr, m, court, style);
+}
+
+
+function on_inactivate_court_button_click(e) {
+	const btn = e.target;
+	const court_id = btn.getAttribute('data-court_id');
+	send({
+		type: 'court_edit',
+		tournament_key: curt.key,
+		is_active: false,
+		court_id: court_id,
+	}, err => {
+		if (err) {
+			return cerror.net(err);
+		}
+	});
+}
+
+function on_activate_court_button_click(e) {
+	const btn = e.target;
+	const court_id = btn.getAttribute('data-court_id');
+	send({
+		type: 'court_edit',
+		tournament_key: curt.key,
+		is_active: true,
+		court_id: court_id,
+	}, err => {
+		if (err) {
+			return cerror.net(err);
+		}
+	});
+}
+
+
+function create_court_button(targetEl, cssClass, title, listener, court_id, text) {
+	const btn = uiu.el(targetEl, 'div', {
+		'class': cssClass,
+		'title': ci18n(title),
+		'data-court_id': court_id,
+		'data-state': cssClass,
+	}, text);
+	btn.addEventListener('click', listener);
+}
+
+
+function allowDrop(ev) {
+  	ev.preventDefault();
+}
+
+function validate_match_complete(match_id) {
+	const m = utils.find(curt.matches, m => m._id === match_id);
+	if (!m) {
+		cerror.silent('Cannot find match to call on court. ID: ' + JSON.stringify(match_id));
+		return false;
+	}
+
+	if (m.setup.teams[0].players.length == 0 || m.setup.teams[1].players.length == 0) {
+		cerror.silent("Match cannot be called one or more Teams are not set.")
+		return false;
+	}
+	return true;
+}
+
+function drag(ev) {
+	let match_id = ev.target.getAttribute("data-match_id");
+	if (validate_match_complete(match_id)) {
+		ev.dataTransfer.setData('text', ev.target.getAttribute("data-match_id"));
+
+		for (const dropp_row of document.getElementsByClassName ("droppable")) {
+			dropp_row.classList.add("droppable_active");
+		}
+	}
+}
+
+function dragend(ev) {
+	for (const dropp_row of document.getElementsByClassName ("droppable")) {
+		dropp_row.classList.remove("droppable_active");
+	}
+}
+
+function drop(ev) {
+	ev.preventDefault();
+	let match_id = ev.dataTransfer.getData('text');
+	if (validate_match_complete(match_id)) {
+		send({
+			type: 'match_call_on_court',
+			court_id: ev.target.getAttribute('data-court_id'),
+			match_id: match_id,
+			tournament_key: curt.key,
+		}, function (err) {
+			if (err) {
+				return cerror.net(err);
+			}
+		});
+
+		for (const dropp_row of document.getElementsByClassName("droppable")) {
+			dropp_row.setAttribute("class", "droppable");
 		}
 	}
 }
@@ -612,6 +2223,7 @@ function render_edit(form, match) {
 		required: 'required',
 		value: setup.match_num || '',
 		tabindex: 1,
+		disabled: 'disabled',
 	});
 
 	uiu.el(metadata, 'span', 'match_label', 'Event:');
@@ -621,6 +2233,7 @@ function render_edit(form, match) {
 		placeholder: ci18n('e.g. MX O55'),
 		size: 10,
 		value: setup.event_name || '',
+		disabled: 'disabled',
 	});
 
 	uiu.el(metadata, 'span', 'match_label', 'Match:');
@@ -630,6 +2243,8 @@ function render_edit(form, match) {
 		placeholder: ci18n('e.g. semi-finals'),
 		size: 10,
 		value: setup.match_name || '',
+		disabled: 'disabled',
+		style: 'width: 253px;',
 	});
 
 	const start = uiu.el(edit_match_container, 'div');
@@ -641,6 +2256,8 @@ function render_edit(form, match) {
 		title: 'Date in ISO8601 format, e.g. 2020-05-30',
 		size: 6,
 		value: setup.scheduled_date || '',
+		style: 'width: 238px;',
+		disabled: 'disabled',
 	});
 
 	uiu.el(start, 'span', 'match_label', ci18n('Time:'));
@@ -651,6 +2268,8 @@ function render_edit(form, match) {
 		title: 'Time in 24 hour format, e.g. 09:23',
 		size: 3,
 		value: setup.scheduled_time_str || '',
+		style: 'width: 268px;',
+		disabled: 'disabled',
 	});
 
 	const player_table = uiu.el(edit_match_container, 'table');
@@ -663,6 +2282,7 @@ function render_edit(form, match) {
 		size: 3,
 		name: 'team0player0nationality',
 		value: player_names.team0player0.nationality || '',
+		disabled: 'disabled',
 	});
 	uiu.el(t0p0td, 'input', {
 		type: 'text',
@@ -671,6 +2291,7 @@ function render_edit(form, match) {
 		required: 'required',
 		value: player_names.team0player0.firstname,
 		tabindex: 20,
+		disabled: 'disabled',
 	});
 	uiu.el(t0p0td, 'input', {
 		type: 'text',
@@ -679,6 +2300,7 @@ function render_edit(form, match) {
 		required: 'required',
 		value: player_names.team0player0.lastname,
 		tabindex: 20,
+		disabled: 'disabled',
 	});
 	const t0p1td = uiu.el(tr1, 'td');
 	uiu.el(t0p1td, 'input', {
@@ -686,6 +2308,7 @@ function render_edit(form, match) {
 		size: 3,
 		name: 'team0player1nationality',
 		value: player_names.team0player1.nationality || '',
+		disabled: 'disabled',
 	});
 	uiu.el(t0p1td, 'input', {
 		type: 'text',
@@ -693,6 +2316,7 @@ function render_edit(form, match) {
 		name: 'team0player1firstname',
 		value: player_names.team0player1.firstname,
 		tabindex: 21,
+		disabled: 'disabled',
 	});
 	uiu.el(t0p1td, 'input', {
 		type: 'text',
@@ -701,6 +2325,7 @@ function render_edit(form, match) {
 		placeholder: ci18n('(Singles)'),
 		value: player_names.team0player1.lastname,
 		tabindex: 21,
+		disabled: 'disabled',
 	});
 
 	uiu.el(tr0, 'td', {
@@ -714,6 +2339,7 @@ function render_edit(form, match) {
 		size: 3,
 		name: 'team1player0nationality',
 		value: player_names.team1player0.nationality  || '',
+		disabled: 'disabled',
 	});
 	uiu.el(t1p0td, 'input', {
 		type: 'text',
@@ -722,6 +2348,7 @@ function render_edit(form, match) {
 		required: 'required',
 		value: player_names.team1player0.firstname,
 		tabindex: 30,
+		disabled: 'disabled',
 	});
 	uiu.el(t1p0td, 'input', {
 		type: 'text',
@@ -730,6 +2357,7 @@ function render_edit(form, match) {
 		required: 'required',
 		value: player_names.team1player0.lastname,
 		tabindex: 30,
+		disabled: 'disabled',
 	});
 	const t1p1td = uiu.el(tr1, 'td');
 	uiu.el(t1p1td, 'input', {
@@ -737,6 +2365,7 @@ function render_edit(form, match) {
 		size: 3,
 		name: 'team1player1nationality',
 		value: player_names.team1player1.nationality || '',
+		disabled: 'disabled',
 	});
 	uiu.el(t1p1td, 'input', {
 		type: 'text',
@@ -744,6 +2373,7 @@ function render_edit(form, match) {
 		name: 'team1player1firstname',
 		value: player_names.team1player1.firstname,
 		tabindex: 31,
+		disabled: 'disabled',
 	});
 	uiu.el(t1p1td, 'input', {
 		type: 'text',
@@ -752,6 +2382,7 @@ function render_edit(form, match) {
 		placeholder: ci18n('(Singles)'),
 		value: player_names.team1player1.lastname,
 		tabindex: 31,
+		disabled: 'disabled',
 	});
 
 	if (curt.is_team) {
@@ -813,6 +2444,9 @@ function render_edit(form, match) {
 	if (setup.now_on_court) {
 		now_on_court_attrs.checked = 'checked';
 	}
+	if (setup.teams[0].players.length < 1 && setup.teams[1].players.length < 1) {
+		now_on_court_attrs.disabled = true;
+	}
 	uiu.el(now_on_court_label, 'input', now_on_court_attrs);
 	uiu.el(now_on_court_label, 'span', 'match_label', ci18n('match:edit:now_on_court'));
 
@@ -827,7 +2461,7 @@ function render_edit(form, match) {
 		name: 'umpire_name',
 		size: 1,
 	});
-	render_umpire_options(umpire_select, setup.umpire_name);
+	render_umpire_options(umpire_select, (setup.umpire && setup.umpire.name) ? setup.umpire.name : '');
 
 	// Service judge
 	uiu.el(tos_container, 'span', {
@@ -838,7 +2472,7 @@ function render_edit(form, match) {
 		name: 'service_judge_name',
 		size: 1,
 	});
-	render_umpire_options(service_judge_select, setup.service_judge_name, true);
+	render_umpire_options(service_judge_select, (setup.service_judge && setup.service_judge.name) ? setup.service_judge.name : '' , true);
 
 	render_override_colors(edit_match_container, setup);
 }
@@ -921,6 +2555,7 @@ function render_umpire_options(select, curval, is_service_judge) {
 }
 
 function render_create(container) {
+	/*
 	uiu.empty(container);
 	const form = uiu.el(container, 'form');
 
@@ -948,10 +2583,13 @@ function render_create(container) {
 			render_create(container);
 		});
 	});
+	*/
 }
 
 return {
+	add_match,
 	calc_section,
+	cmp_match_order: cmp_scheduled_match_order,
 	prepare_render,
 	render_create,
 	render_finished,
@@ -959,7 +2597,13 @@ return {
 	render_courts,
 	render_umpire_options,
 	render_upcoming_matches,
+	update_court,
 	update_match_score,
+	update_match,
+	remove_match_from_gui,
+	update_players,
+	create_timer,
+	update_tables
 };
 
 })();
@@ -975,6 +2619,7 @@ if ((typeof module !== 'undefined') && (typeof require !== 'undefined')) {
 	var countries = require('./countries');
 	var crouting = require('./crouting');
 	var ctournament = require('./ctournament');
+	var ctabletoperator = require('./ctabletoperator');
 	var form_utils = require('../bup/js/form_utils');
 	var uiu = require('../bup/js/uiu');
 	var utils = require('../bup/js/utils');
@@ -985,6 +2630,7 @@ if ((typeof module !== 'undefined') && (typeof require !== 'undefined')) {
 	var i18n_en = require('../bup/js/i18n_en');
 	var printing = require('../bup/js/printing');
 	var settings = require('../bup/js/settings');
+	var timer = require('../bup/js/timer');
 
     module.exports = cmatch;
 }

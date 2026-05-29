@@ -1,12 +1,8 @@
 'use strict';
-
 const assert = require('assert');
 const zlib = require('zlib');
-
 const xmldom = require('xmldom');
-
 const serror = require('./serror');
-
 
 function get_info_request(password) {
 	const res = {
@@ -69,7 +65,7 @@ function update_request(match, key_unicode, password, umpire_btp_id, service_jud
 		},
 		Update: {
 			Tournament: {
-				Matches: matches,
+				Matches: matches
 			},
 		},
 	};
@@ -77,37 +73,56 @@ function update_request(match, key_unicode, password, umpire_btp_id, service_jud
 		res.Action.Password = password;
 	}
 
-	assert(typeof match.team1_won === 'boolean');
-	const winner = match.team1_won ? 1 : 2;
 	assert(match.btp_match_ids);
 	assert(match.btp_match_ids.length > 0);
-	assert(match.network_score);
-	const duration_mins = match.duration_ms ? Math.floor(match.duration_ms / 60000) : 0;
 	const shuttle_count = match.shuttle_count;
 
 	for (const btp_m_id of match.btp_match_ids) {
 		assert(btp_m_id);
 
-		const sets = match.network_score.map(ns => {
-			return {
-				Set: {
-					T1: ns[0],
-					T2: ns[1],
-				},
-			};
-		});
+		//TODO: calc Status;
 
 		const m = {
 			ID: btp_m_id.id,
 			DrawID: btp_m_id.draw,
 			PlanningID: btp_m_id.planning,
-			Sets: sets,
-			Winner: winner,
-			ScoreStatus: 0, // Won normally (TODO: correctly handle resignations etc.)
-			Duration: duration_mins,
 			Status: 0,
-			// BTP also sends a boolean ScoreSheetPrinted here
+			Highlight: (match.setup.highlight ? match.setup.highlight : 0),
+			// DisplayOrder: match.match_order,
 		};
+
+		if(typeof match.team1_won === 'boolean') {
+			m.Winner = match.team1_won ? 1 : 2;
+		
+			const duration_mins = match.duration_ms ? Math.floor(match.duration_ms / 60000) : 0;
+			m.Duration = duration_mins;
+
+			if(match.network_score) {
+				const sets = match.network_score.map(ns => {
+					return {
+						Set: {
+							T1: ns[0],
+							T2: ns[1],
+						},
+					};
+				});
+
+				m.Sets = sets;
+			}
+
+			let scoreStatus = 0; //Won normally
+			if(	(match.presses.length > 0 && match.presses[match.presses.length - 1].type == "retired") || 
+				(match.presses.length > 1 && match.presses[match.presses.length - 2].type == "retired")) {
+				scoreStatus = 2; //retired
+			}
+			if(	(match.presses.length > 0 && match.presses[match.presses.length - 1].type == "disqualified") || 
+				(match.presses.length > 1 && match.presses[match.presses.length - 2].type == "disqualified")) {
+				scoreStatus = 3; //disqualified
+			}
+
+			m.ScoreStatus = scoreStatus;
+		}
+
 		if (umpire_btp_id) {
 			m.Official1ID = umpire_btp_id;
 		}
@@ -119,6 +134,25 @@ function update_request(match, key_unicode, password, umpire_btp_id, service_jud
 		}
 		if (shuttle_count) {
 			m.Shuttles = shuttle_count;
+		}
+
+
+		if(match.setup.teams.length > 1) {
+			if (match.setup.teams[0].players.length > 0 && match.setup.teams[0].players[0].checked_in) {
+				m.Status = m.Status | 0b0001;
+			}
+
+			if(match.setup.teams[0].players.length > 1 &&  match.setup.teams[0].players[1].checked_in) {
+				m.Status = m.Status | 0b0010;
+			}
+
+			if (match.setup.teams[1].players.length > 0 && match.setup.teams[1].players[0].checked_in) {
+				m.Status = m.Status | 0b0100;
+			}
+
+			if(match.setup.teams[1].players.length > 1 &&  match.setup.teams[1].players[1].checked_in) {
+				m.Status = m.Status | 0b1000;
+			}
 		}
 
 		matches.push({Match: m});
@@ -133,8 +167,116 @@ function update_request(match, key_unicode, password, umpire_btp_id, service_jud
 			const pupdate = {
 				ID: pid,
 				LastTimeOnCourt: end_date,
+				CheckedIn: false,
 			};
 			players.push({Player: pupdate});
+		}
+
+		if(match.setup.tabletoperators && match.setup.tabletoperators.length > 0) {
+			for (const operator of match.setup.tabletoperators) {
+				const pupdate = {
+					ID: operator.btp_id,
+					LastTimeOnCourt: end_date,
+					CheckedIn: false,
+				};
+				
+				players.push({Player: pupdate});
+			}
+		}
+	}
+	return res;
+}
+
+function update_players_request(players, key_unicode, password) {
+	assert(key_unicode);
+	const res = {
+		Header: {
+			Version: {
+				Hi: 1,
+				Lo: 1,
+			},
+		},
+		Action: {
+			ID: 'SENDUPDATE',
+			Unicode: key_unicode,
+		},
+		Client: {
+			IP: 'bts',
+		},
+		Update: {
+			Tournament: {
+			},
+		},
+	};
+	if (password) {
+		res.Action.Password = password;
+	}
+
+	const btp_players = [];
+	res.Update.Tournament.Players = btp_players;
+
+	players.forEach((player) => {
+		if (player.btp_id) {
+			const pupdate = {
+				ID: player.btp_id,
+				CheckedIn: player.checked_in,
+			};
+			
+			if (player.last_time_on_court_ts) {
+				const end_date = new Date(player.last_time_on_court_ts);
+
+				pupdate.LastTimeOnCourt = end_date;
+			}
+			btp_players.push({Player: pupdate});
+		}
+	});
+	return res;
+}
+
+function update_courts_request(courts, key_unicode, password){
+	assert(key_unicode);
+	const courts_list = [];
+	const res = {
+		Header: {
+			Version: {
+				Hi: 1,
+				Lo: 1,
+			},
+		},
+		Action: {
+			ID: 'SENDUPDATE',
+			Unicode: key_unicode,
+		},
+		Client: {
+			IP: 'bts',
+		},
+		Update: {
+			Tournament: {
+				Courts: courts_list,
+			},
+		},
+	};
+
+	if (password) {
+		res.Action.Password = password;
+	}
+
+	assert(courts);
+	assert(courts.length > 0);
+
+	for (const court of courts) {
+		assert(court.btp_id);
+
+		if (court.btp_id){
+		 	const c = {
+		 		ID: court.btp_id
+		 	}
+
+			if(court.btp_match_id){
+				c.MatchID = court.btp_match_id;
+			}
+
+		 	courts_list.push({Court: c});
 		}
 	}
 
@@ -322,6 +464,8 @@ module.exports = {
 	get_info_request,
 	login_request,
 	update_request,
+	update_players_request,
+	update_courts_request,
 	// Tests only
 	_req2xml: req2xml,
 };
