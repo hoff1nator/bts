@@ -2269,6 +2269,9 @@ async function integrate_player_state(app, tkey, btp_state, callback) {
 						for (let player_nr = 0; player_nr < (match.bts_players[team_nr] || []).length; player_nr++) {
 							const btp_player_id = match.bts_players?.[team_nr]?.[player_nr]?.ID?.[0] || null;
 							const local_player = find_setup_player_by_btp_id(cur_match.setup, btp_player_id);
+							if (!local_player) {
+								continue;
+							}
 							let id = pause_is_done(match, team_nr, player_nr, tournament.btp_settings, now_ms(app), local_player);
 
 							if (id != undefined && id != null) {
@@ -2278,17 +2281,22 @@ async function integrate_player_state(app, tkey, btp_state, callback) {
 										!cur_match.setup.called_timestamp &&
 										!cur_match.network_score) {
 
+								if (!local_player.now_tablet_on_court &&
+									!local_player.now_playing_on_court &&
+									!cur_match.setup.called_timestamp &&
+									!cur_match.network_score) {
+
+									if (btp_state.matches?.[key]?.bts_players?.[team_nr]?.[player_nr]?.CheckedIn) {
 										btp_state.matches[key].bts_players[team_nr][player_nr].CheckedIn[0] = true;
+									}
 
 
-										const player = cur_match.setup.teams[team_nr].players[player_nr];
-										if (ids_to_change.indexOf(id) == -1) {
-											player.checked_in = true;
-											player.check_in_per_match = false;
-											player.tablet_break_active = false;
-											ids_to_change.push(id);
-											players_to_change.push(player);
-										}
+									if (ids_to_change.indexOf(id) == -1) {
+										local_player.checked_in = true;
+										local_player.check_in_per_match = false;
+										local_player.tablet_break_active = false;
+										ids_to_change.push(id);
+										players_to_change.push(local_player);
 									}
 								}
 							}
@@ -2982,6 +2990,7 @@ module.exports = {
 	sync_btp_data,
 	time_str,
 	// test only
+	_integrate_player_state: integrate_player_state,
 	_integrate_umpires: integrate_umpires,
 	_fallback_scoring_format: fallbackScoringFormat,
 	_normalize_scoring_format: normalizeScoringFormat,

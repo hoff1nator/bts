@@ -735,4 +735,76 @@ _describe('btp_sync', () => {
 
 		assert.strictEqual(found, existing);
 	});
+
+	_it('does not crash when BTP player positions do not exist in the local match teams', (done) => {
+		const localPlayer = {
+			_id: 'p1',
+			btp_id: 101,
+			checked_in: false,
+			now_tablet_on_court: false,
+			now_playing_on_court: false,
+		};
+		const localMatch = {
+			_id: 'm1',
+			tournament_key: 't1',
+			btp_id: 't1_HE_1',
+			setup: {
+				teams: [
+					{ players: [localPlayer] },
+					{ players: [] },
+				],
+			},
+		};
+		const btpState = {
+			draws: new Map([
+				['10', { EventID: ['20'], Name: ['HE'] }],
+			]),
+			events: new Map([
+				['20', { Name: ['HE'] }],
+			]),
+			matches: [{
+				ID: ['1'],
+				DrawID: ['10'],
+				bts_players: [
+					[
+						{ ID: [101], CheckedIn: [false] },
+						{ ID: [102], CheckedIn: [false] },
+					],
+					[],
+				],
+			}],
+		};
+		const app = {
+			db: {
+				tournaments: {
+					findOne(query, cb) {
+						cb(null, {
+							key: 't1',
+							btp_settings: {
+								check_in_per_match: false,
+								pause_duration_ms: 0,
+							},
+						});
+					},
+				},
+				matches: {
+					findOne(query, cb) {
+						assert.deepStrictEqual(query, {
+							btp_id: 't1_HE_1',
+							tournament_key: 't1',
+						});
+						cb(null, localMatch);
+					},
+				},
+			},
+		};
+
+		btp_sync._integrate_player_state(app, 't1', btpState, (err) => {
+			assert.ifError(err);
+			assert.strictEqual(localPlayer.checked_in, true);
+			assert.strictEqual(btpState.matches[0].bts_players[0][0].CheckedIn[0], true);
+			assert.strictEqual(btpState.matches[0].bts_players[0][1].CheckedIn[0], false);
+			done();
+		});
+	});
 	});
