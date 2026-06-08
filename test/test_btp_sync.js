@@ -807,4 +807,56 @@ _describe('btp_sync', () => {
 			done();
 		});
 	});
+
+	_it('copies checked-in state by BTP id instead of player position', () => {
+		const targetSetup = {
+			teams: [
+				{
+					players: [
+						{ btp_id: 101, checked_in: false },
+						{ btp_id: 102, checked_in: false },
+					],
+				},
+			],
+		};
+		const sourceSetup = {
+			teams: [
+				{
+					players: [
+						{ btp_id: 102, checked_in: true },
+						{ btp_id: 101, checked_in: false },
+					],
+				},
+			],
+		};
+
+		btp_sync._copy_checked_in_by_btp_id(targetSetup, sourceSetup);
+
+		assert.strictEqual(targetSetup.teams[0].players[0].checked_in, false);
+		assert.strictEqual(targetSetup.teams[0].players[1].checked_in, true);
+	});
+
+	_it('detects player assignment changes independent from check-in state', () => {
+		const previousSetup = {
+			teams: [
+				{ players: [{ btp_id: 101 }, { btp_id: 102 }] },
+				{ players: [{ btp_id: 201 }] },
+			],
+		};
+		const sameSetup = {
+			teams: [
+				{ players: [{ btp_id: 101 }, { btp_id: 102 }] },
+				{ players: [{ btp_id: 201 }] },
+			],
+		};
+		const changedSetup = {
+			teams: [
+				{ players: [{ btp_id: 101 }, { btp_id: 103 }] },
+				{ players: [{ btp_id: 201 }] },
+			],
+		};
+
+		assert.strictEqual(btp_sync._setup_player_assignment_changed(previousSetup, sameSetup), false);
+		assert.strictEqual(btp_sync._setup_player_assignment_changed(previousSetup, changedSetup), true);
+	});
 	});

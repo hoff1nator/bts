@@ -719,6 +719,49 @@ function find_setup_player_by_btp_id(setup, btp_id) {
 	return null;
 }
 
+function setup_player_id_signature(setup) {
+	return (setup?.teams || []).map((team) =>
+		(team?.players || []).map((player) =>
+			player?.btp_id == null ? null : String(player.btp_id)
+		)
+	);
+}
+
+function setup_player_assignment_changed(previous_setup, next_setup) {
+	const previous_signature = setup_player_id_signature(previous_setup);
+	const next_signature = setup_player_id_signature(next_setup);
+	if (previous_signature.length !== next_signature.length) {
+		return true;
+	}
+	for (let team_index = 0; team_index < previous_signature.length; team_index++) {
+		const previous_team = previous_signature[team_index] || [];
+		const next_team = next_signature[team_index] || [];
+		if (previous_team.length !== next_team.length) {
+			return true;
+		}
+		for (let player_index = 0; player_index < previous_team.length; player_index++) {
+			if (previous_team[player_index] !== next_team[player_index]) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+function copy_checked_in_by_btp_id(target_setup, source_setup) {
+	for (const source_team of (source_setup?.teams || [])) {
+		for (const source_player of (source_team?.players || [])) {
+			if (source_player?.btp_id == null) {
+				continue;
+			}
+			const target_player = find_setup_player_by_btp_id(target_setup, source_player.btp_id);
+			if (target_player) {
+				target_player.checked_in = source_player.checked_in;
+			}
+		}
+	}
+}
+
 function _craft_team(par) {
 	if (!par) {
 		return { players: [] };
@@ -787,8 +830,8 @@ function _craft_team(par) {
 			});
 		}
 
-		if (p.CheckedIn && p.CheckedIn.length > 0) {
-			pres.checked_in = p.CheckedIn[0];
+			if (p.CheckedIn?.length > 0) {
+				pres.checked_in = p.CheckedIn?.[0];
 		}
 
 		try{
@@ -1238,26 +1281,15 @@ async function integrate_matches(app, tkey, btp_state, scoring_formats, location
 							return;
 						}
 
-						let only_change_check_in = false;
-						let result_enterd_in_btp = false;
-						let match_player_changed = false;
-						const current_match_for_check_in_compare = JSON.parse(JSON.stringify(current_match));
+							let only_change_check_in = false;
+							let result_enterd_in_btp = false;
+							let match_player_changed = false;
+							const current_match_for_check_in_compare = JSON.parse(JSON.stringify(current_match));
 
-						for (let team_index = 0; team_index < Math.min(current_match.setup.teams.length, match.setup.teams.length); team_index++) {
-							if(current_match.setup.teams[team_index].players.length < match.setup.teams[team_index].players.length){
-								for (let player_index = 0; player_index < match.setup.teams[team_index].players.length; player_index++) {
-									match_player_changed = true;
-								}
-							}
-							for (let player_index = 0; player_index < Math.min(current_match.setup.teams[team_index].players.length, match.setup.teams[team_index].players.length); player_index++) {
-								current_match_for_check_in_compare.setup.teams[team_index].players[player_index].checked_in = match.setup.teams[team_index].players[player_index].checked_in;
-								if(match.setup.teams[team_index].players[player_index].btp_id != current_match.setup.teams[team_index].players[player_index].btp_id) {
-									match_player_changed = true;
-								}
-							}
-						}
+							match_player_changed = setup_player_assignment_changed(current_match.setup, match.setup);
+							copy_checked_in_by_btp_id(current_match_for_check_in_compare.setup, match.setup);
 
-						if (!current_match.team1_won && current_match.team1_won != match.team1_won) {
+							if (!current_match.team1_won && current_match.team1_won != match.team1_won) {
 							if (!match.end_ts) {
 								result_enterd_in_btp = true;
 								match.setup.warmup = 'none';
@@ -2441,9 +2473,9 @@ function pause_is_done(match, team_nr, player_nr, btp_settings, current_now_ms, 
 		if (match.bts_players[team_nr] && match.bts_players[team_nr].length > player_nr) {
 			const player = match.bts_players[team_nr][player_nr];
 
-			if (player.CheckedIn[0] || local_player?.checked_in === true) {
-				return;
-			}
+				if (player.CheckedIn?.[0] || local_player?.checked_in === true) {
+					return;
+				}
 
 			let last_time_on_court_ts = local_player?.last_time_on_court_ts || null;
 			if (!last_time_on_court_ts && player.LastTimeOnCourt && player.LastTimeOnCourt[0]) {
@@ -2991,6 +3023,8 @@ module.exports = {
 	time_str,
 	// test only
 	_integrate_player_state: integrate_player_state,
+	_copy_checked_in_by_btp_id: copy_checked_in_by_btp_id,
+	_setup_player_assignment_changed: setup_player_assignment_changed,
 	_integrate_umpires: integrate_umpires,
 	_fallback_scoring_format: fallbackScoringFormat,
 	_normalize_scoring_format: normalizeScoringFormat,

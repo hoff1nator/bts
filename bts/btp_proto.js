@@ -146,20 +146,22 @@ function update_request(match, key_unicode, password, umpire_btp_id, service_jud
 		}
 
 
-		if (write_match_check_in_status && match.setup.teams.length > 1) {
-			if (match.setup.teams[0].players.length > 0 && match.setup.teams[0].players[0].checked_in) {
+		if (write_match_check_in_status && Array.isArray(match?.setup?.teams) && match.setup.teams.length > 1) {
+			const team0_players = Array.isArray(match.setup.teams[0]?.players) ? match.setup.teams[0].players : [];
+			const team1_players = Array.isArray(match.setup.teams[1]?.players) ? match.setup.teams[1].players : [];
+			if (team0_players.length > 0 && team0_players[0].checked_in) {
 				m.Status = m.Status | 0b0001;
 			}
 
-			if(match.setup.teams[0].players.length > 1 &&  match.setup.teams[0].players[1].checked_in) {
+			if(team0_players.length > 1 &&  team0_players[1].checked_in) {
 				m.Status = m.Status | 0b0010;
 			}
 
-			if (match.setup.teams[1].players.length > 0 && match.setup.teams[1].players[0].checked_in) {
+			if (team1_players.length > 0 && team1_players[0].checked_in) {
 				m.Status = m.Status | 0b0100;
 			}
 
-			if(match.setup.teams[1].players.length > 1 &&  match.setup.teams[1].players[1].checked_in) {
+			if(team1_players.length > 1 &&  team1_players[1].checked_in) {
 				m.Status = m.Status | 0b1000;
 			}
 		}

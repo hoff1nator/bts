@@ -39,6 +39,16 @@ function setup_tabletoperator_btp_ids(setup) {
 	return [...new Set(tabletoperators.map((operator) => operator?.btp_id).filter((btp_id) => btp_id != null && btp_id !== -1))];
 }
 
+function first_setup_player_state(setup) {
+	for (let team_index = 0; team_index < 2; team_index++) {
+		const player = setup_team_players(setup, team_index).find((entry) => entry?.state);
+		if (player) {
+			return player.state;
+		}
+	}
+	return '';
+}
+
 function for_each_setup_player(setup, callback) {
 	for (let team_index = 0; team_index < 2; team_index++) {
 		setup_team_players(setup, team_index).forEach((player, player_index) => {
@@ -899,7 +909,7 @@ async function add_tabletoperators(app, tournament, match, callback) {
 				if (tournament.tabletoperator_with_state_from_match_enabled && typeof(fetch_result) == "undefined") {
 					value.push({
 						asian_name: false,
-						name: setup.teams[0].players[0].state,
+						name: first_setup_player_state(setup),
 						firstname: "",
 						lastname: "",
 						btp_id: -1});
@@ -1097,51 +1107,30 @@ function get_last_looser_on_court(admin, app, tkey, court_id) {
 
 function calc_match_set_player_on_tablet(match, match_on_court_setup) {
 	return new Promise((resolve) => {
-		if(match.setup.now_on_court == false) {
-			resolve(null);
+		if(match?.setup?.now_on_court == false) {
+			return resolve(null);
 		}
-		
-		if(!match_on_court_setup.tabletoperators || match_on_court_setup.tabletoperators.length <1) {
-			resolve(null);
-		}
-		
-		let tablet_operatorns_btp_ids = [match_on_court_setup.tabletoperators[0].btp_id];
 
-		if(match_on_court_setup.tabletoperators.length > 1) {
-			tablet_operatorns_btp_ids.push(match_on_court_setup.tabletoperators[1].btp_id);
+		let tablet_operatorns_btp_ids = setup_tabletoperator_btp_ids(match_on_court_setup);
+		if(tablet_operatorns_btp_ids.length < 1) {
+			return resolve(null);
 		}
 
 		let change = false;
-		
-		if (match.setup.teams[0].players.length > 0 && tablet_operatorns_btp_ids.includes(match.setup.teams[0].players[0].btp_id)) {
-			match.setup.teams[0].players[0].now_tablet_on_court = match_on_court_setup.court_id;
-			match.setup.teams[0].players[0].checked_in = false;
-			change = true;
-		}
 
-		if (match.setup.teams[0].players.length > 1 && tablet_operatorns_btp_ids.includes(match.setup.teams[0].players[1].btp_id)) {
-			match.setup.teams[0].players[1].now_tablet_on_court = match_on_court_setup.court_id;
-			match.setup.teams[0].players[1].checked_in = false;
-			change = true;
-		}
-
-		if (match.setup.teams[1].players.length > 0 && tablet_operatorns_btp_ids.includes(match.setup.teams[1].players[0].btp_id)) {
-			match.setup.teams[1].players[0].now_tablet_on_court = match_on_court_setup.court_id;
-			match.setup.teams[1].players[0].checked_in = false;
-			change = true;
-		}
-
-		if (match.setup.teams[1].players.length > 1 && tablet_operatorns_btp_ids.includes(match.setup.teams[1].players[1].btp_id)) {
-			match.setup.teams[1].players[1].now_tablet_on_court = match_on_court_setup.court_id;
-			match.setup.teams[1].players[1].checked_in = false;
-			change = true;
-		}
+		for_each_setup_player(match?.setup, (player) => {
+			if (player?.btp_id != null && tablet_operatorns_btp_ids.includes(player.btp_id)) {
+				player.now_tablet_on_court = match_on_court_setup.court_id;
+				player.checked_in = false;
+				change = true;
+			}
+		});
 
 		if (change) {
-			resolve(match);
+			return resolve(match);
 		}
 
-		resolve(null);
+		return resolve(null);
 	});
 }
 
@@ -1177,54 +1166,30 @@ async function set_player_on_tablet (app, tkey, match_on_court_setup, callback) 
 
 function calc_match_set_player_on_court(match, match_on_court_setup) {
 	return new Promise((resolve) => {
-		if(match.setup.now_on_court == false) {
-			resolve(null);
+		if(match?.setup?.now_on_court == false) {
+			return resolve(null);
 		}
-		
-		let on_court_btp_ids = [match_on_court_setup.teams[0].players[0].btp_id, 
-								match_on_court_setup.teams[1].players[0].btp_id];
 
-		if(match_on_court_setup.teams[0].players.length > 1) {
-			on_court_btp_ids.push(match_on_court_setup.teams[0].players[1].btp_id);
-		}
-		
-		if(match_on_court_setup.teams[1].players.length > 1) {
-			on_court_btp_ids.push(match_on_court_setup.teams[1].players[1].btp_id);
+		let on_court_btp_ids = setup_player_btp_ids(match_on_court_setup);
+		if(on_court_btp_ids.length < 1) {
+			return resolve(null);
 		}
 
 		let change = false;
-		
-		if (match.setup.teams[0].players.length > 0 && on_court_btp_ids.includes(match.setup.teams[0].players[0].btp_id)) {
-			match.setup.teams[0].players[0].now_playing_on_court = match_on_court_setup.court_id;
-			match.setup.teams[0].players[0].tablet_break_active = false;
-			match.setup.state = 'blocked';
-			change = true;
-		}
 
-		if (match.setup.teams[0].players.length > 1 && on_court_btp_ids.includes(match.setup.teams[0].players[1].btp_id)) {
-			match.setup.teams[0].players[1].now_playing_on_court = match_on_court_setup.court_id;
-			match.setup.teams[0].players[1].tablet_break_active = false;
-			match.setup.state = 'blocked';
-			change = true;
-		}
+		for_each_setup_player(match?.setup, (player) => {
+			if (player?.btp_id != null && on_court_btp_ids.includes(player.btp_id)) {
+				player.now_playing_on_court = match_on_court_setup.court_id;
+				player.tablet_break_active = false;
+				match.setup.state = 'blocked';
+				change = true;
+			}
+		});
 
-		if (match.setup.teams[1].players.length > 0 && on_court_btp_ids.includes(match.setup.teams[1].players[0].btp_id)) {
-			match.setup.teams[1].players[0].now_playing_on_court = match_on_court_setup.court_id;
-			match.setup.teams[1].players[0].tablet_break_active = false;
-			match.setup.state = 'blocked';
-			change = true;
-		}
-
-		if (match.setup.teams[1].players.length > 1 && on_court_btp_ids.includes(match.setup.teams[1].players[1].btp_id)) {
-			match.setup.teams[1].players[1].now_playing_on_court = match_on_court_setup.court_id;
-			match.setup.teams[1].players[1].tablet_break_active = false;
-			match.setup.state = 'blocked';
-			change = true;
-		}
 		if (change) {
-			resolve(match);
+			return resolve(match);
 		}
-		resolve(null);
+		return resolve(null);
 	});
 }
 
@@ -2287,13 +2252,11 @@ async function call_next_possible_match_for_preparation(app, tournament_key, cal
 				}
 				if (matches && matches.length > 0) {
 					const now = now_ms(app);
-					for (var i = 0; i < matches.length; ++i) {
-						var match = matches[i];
-						var possible = true;
-						for (let team_index = 0; team_index < Math.min(match.setup.teams.length, match.setup.teams.length); team_index++) {
-							for (let player_index = 0; player_index < Math.min(match.setup.teams[team_index].players.length, match.setup.teams[team_index].players.length); player_index++) {
+						for (var i = 0; i < matches.length; ++i) {
+							var match = matches[i];
+							var possible = true;
+							for_each_setup_player(match?.setup, (player) => {
 								if (possible == true) {
-									const player = match.setup.teams[team_index].players[player_index];
 									if (player.now_playing_on_court != undefined) {
 										if (player.now_playing_on_court === false) {
 											possible = true;
@@ -2320,11 +2283,10 @@ async function call_next_possible_match_for_preparation(app, tournament_key, cal
 										}
 									}
 								}
-							}
-						}
-						if (possible) {
-							call_match_in_preparation(app, tournament,match._id, null, match.setup, callback);
-							break;
+							});
+							if (possible) {
+								call_match_in_preparation(app, tournament,match._id, null, match.setup, callback);
+								break;
 						}
 					}
 				} else {
@@ -2392,7 +2354,7 @@ async function call_match_in_preparation(app, tournament, match, location_id, ca
 					if (tournament.tabletoperator_with_state_from_match_enabled && typeof(fetch_result) == "undefined") {
 						value.push({
 							asian_name: false,
-							name: setup.teams[0].players[0].state,
+							name: first_setup_player_state(setup),
 							firstname: "",
 							lastname: "",
 							btp_id: -1});
