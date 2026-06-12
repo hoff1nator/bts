@@ -183,17 +183,6 @@ function update_request(match, key_unicode, password, umpire_btp_id, service_jud
 			players.push({Player: pupdate});
 		}
 
-		if(match.setup.tabletoperators && match.setup.tabletoperators.length > 0) {
-			for (const operator of match.setup.tabletoperators) {
-				const pupdate = {
-					ID: operator.btp_id,
-					LastTimeOnCourt: end_date,
-					CheckedIn: false,
-				};
-				
-				players.push({Player: pupdate});
-			}
-		}
 	}
 	return res;
 }

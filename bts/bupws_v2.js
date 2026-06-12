@@ -1180,9 +1180,6 @@ function build_timer_v2(match) {
 		return null;
 	}
 	const presses = safe_array(match.presses);
-	if (presses.length === 0) {
-		return null;
-	}
 	try {
 		const remote_state = calc.remote_state({}, match.setup, presses);
 		if (!remote_state || !remote_state.timer || !remote_state.timer.start) {

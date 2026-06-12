@@ -705,6 +705,45 @@ _describe('match automation', () => {
 		);
 	});
 
+	_it('keeps players blocked while their tablet-operator break is still active', () => {
+		const tournament = {
+			preparation_call_player_pause_expired_enabled: true,
+			btp_settings: {
+				pause_duration_ms: 10 * 60 * 1000,
+			},
+			courts: [],
+			matches: [],
+		};
+		const match = make_preparation_match({
+			setup: {
+				teams: [
+					{
+						players: [{
+							_id: 'p1',
+							last_time_on_court_ts: Date.parse('2026-04-07T09:40:00'),
+							tablet_break_active: true,
+							tablet_break_until_ts: Date.parse('2026-04-07T10:15:00'),
+						}],
+					},
+					{ players: [{ _id: 'p2', last_time_on_court_ts: Date.parse('2026-04-07T09:40:00') }] },
+				],
+			},
+		});
+
+		assert.strictEqual(
+			match_automation.is_match_eligible_for_preparation(match, 'l1', tournament, {
+				now_ts: Date.parse('2026-04-07T10:10:00'),
+			}),
+			false
+		);
+		assert.strictEqual(
+			match_automation.is_match_eligible_for_preparation(match, 'l1', tournament, {
+				now_ts: Date.parse('2026-04-07T10:16:00'),
+			}),
+			true
+		);
+	});
+
 	_it('treats players currently on court or on tablet as not pause-cleared when the rule is enabled', () => {
 		const tournament = {
 			preparation_call_player_pause_expired_enabled: true,

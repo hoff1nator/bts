@@ -2296,40 +2296,34 @@ async function integrate_player_state(app, tkey, btp_state, callback) {
 			let players_to_change = [];
 			async.eachOfSeries(btp_state.matches, async (match, key) => {
 				let cur_match = await get_match_form_db(app, tkey, btp_state, match);
-				if (cur_match && cur_match != null) {
-					for (let team_nr = 0; team_nr < (match.bts_players || []).length; team_nr++) {
-						for (let player_nr = 0; player_nr < (match.bts_players[team_nr] || []).length; player_nr++) {
-							const btp_player_id = match.bts_players?.[team_nr]?.[player_nr]?.ID?.[0] || null;
-							const local_player = find_setup_player_by_btp_id(cur_match.setup, btp_player_id);
-							if (!local_player) {
-								continue;
-							}
-							let id = pause_is_done(match, team_nr, player_nr, tournament.btp_settings, now_ms(app), local_player);
+				if (!cur_match) {
+					return;
+				}
+				for (let team_nr = 0; team_nr < (match.bts_players || []).length; team_nr++) {
+					for (let player_nr = 0; player_nr < (match.bts_players[team_nr] || []).length; player_nr++) {
+						const btp_player_id = match.bts_players?.[team_nr]?.[player_nr]?.ID?.[0] || null;
+						const local_player = find_setup_player_by_btp_id(cur_match.setup, btp_player_id);
+						if (!local_player) {
+							continue;
+						}
+						let id = pause_is_done(match, team_nr, player_nr, tournament.btp_settings, now_ms(app), local_player);
 
-							if (id != undefined && id != null) {
-								if (cur_match.setup.teams[team_nr] && cur_match.setup.teams[team_nr].players[player_nr]) {
-									if (!cur_match.setup.teams[team_nr].players[player_nr].now_tablet_on_court &&
-										!cur_match.setup.teams[team_nr].players[player_nr].now_playing_on_court &&
-										!cur_match.setup.called_timestamp &&
-										!cur_match.network_score) {
+						if (id != undefined && id != null) {
+							if (!local_player.now_tablet_on_court &&
+								!local_player.now_playing_on_court &&
+								!cur_match.setup.called_timestamp &&
+								!cur_match.network_score) {
 
-								if (!local_player.now_tablet_on_court &&
-									!local_player.now_playing_on_court &&
-									!cur_match.setup.called_timestamp &&
-									!cur_match.network_score) {
+								if (btp_state.matches?.[key]?.bts_players?.[team_nr]?.[player_nr]?.CheckedIn) {
+									btp_state.matches[key].bts_players[team_nr][player_nr].CheckedIn[0] = true;
+								}
 
-									if (btp_state.matches?.[key]?.bts_players?.[team_nr]?.[player_nr]?.CheckedIn) {
-										btp_state.matches[key].bts_players[team_nr][player_nr].CheckedIn[0] = true;
-									}
-
-
-									if (ids_to_change.indexOf(id) == -1) {
-										local_player.checked_in = true;
-										local_player.check_in_per_match = false;
-										local_player.tablet_break_active = false;
-										ids_to_change.push(id);
-										players_to_change.push(local_player);
-									}
+								if (ids_to_change.indexOf(id) == -1) {
+									local_player.checked_in = true;
+									local_player.check_in_per_match = false;
+									local_player.tablet_break_active = false;
+									ids_to_change.push(id);
+									players_to_change.push(local_player);
 								}
 							}
 						}
@@ -2370,13 +2364,10 @@ function normalize_match_player_pause_state(app, tkey, callback) {
 					if (!player?.btp_id) {
 						continue;
 					}
-					const player_has_active_tablet_break = player.tablet_break_active === true && player.last_time_on_court_ts;
-					if (!is_authoritative_pause_source && !player_has_active_tablet_break) {
+					if (!is_authoritative_pause_source) {
 						continue;
 					}
-					const candidate_ts = player_has_active_tablet_break
-						? player.last_time_on_court_ts
-						: (match.end_ts || player.last_time_on_court_ts);
+					const candidate_ts = match.end_ts || player.last_time_on_court_ts;
 					if (!candidate_ts) {
 						continue;
 					}
@@ -2475,6 +2466,12 @@ function pause_is_done(match, team_nr, player_nr, btp_settings, current_now_ms, 
 
 				if (player.CheckedIn?.[0] || local_player?.checked_in === true) {
 					return;
+				}
+				if (local_player?.tablet_break_active === true) {
+					const tablet_break_until_ts = Number(local_player.tablet_break_until_ts);
+					if (Number.isFinite(tablet_break_until_ts) && current_now_ms < tablet_break_until_ts) {
+						return;
+					}
 				}
 
 			let last_time_on_court_ts = local_player?.last_time_on_court_ts || null;

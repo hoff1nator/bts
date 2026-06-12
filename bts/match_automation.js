@@ -525,6 +525,12 @@ function passes_player_pause_expired_rule_for_prefix(match, tournament, prefix, 
 		if (player.now_playing_on_court || player.now_tablet_on_court) {
 			return false;
 		}
+		if (player.tablet_break_active === true) {
+			const tablet_break_until_ts = Number(player.tablet_break_until_ts);
+			if (Number.isFinite(tablet_break_until_ts) && now_ts < tablet_break_until_ts) {
+				return false;
+			}
+		}
 		if (!player.last_time_on_court_ts) {
 			return true;
 		}

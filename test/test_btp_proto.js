@@ -42,4 +42,27 @@ _describe('btp_proto update_request', () => {
 
 		assert.strictEqual(extract_first_match_status(req), 0);
 	});
+
+	_it('does not report tablet operators as players with fresh LastTimeOnCourt', () => {
+		const end_ts = 1770000000000;
+		const req = btp_proto.update_request({
+			btp_match_ids: [{ id: 1, draw: 2, planning: 3 }],
+			btp_player_ids: [11, 22],
+			end_ts,
+			team1_won: true,
+			setup: {
+				highlight: 0,
+				tabletoperators: [{ btp_id: 99, name: 'Tablet Operator' }],
+				teams: [
+					{ players: [{ checked_in: true }] },
+					{ players: [{ checked_in: true }] },
+				],
+			},
+		}, 'unicode', null, null, null, null, {
+			current_now_ms: end_ts + 1000,
+		});
+
+		const player_ids = req.Update.Tournament.Players.map((entry) => entry.Player.ID);
+		assert.deepStrictEqual(player_ids, [11, 22]);
+	});
 });

@@ -118,6 +118,25 @@ function sort_free_courts_for_auto_call(courts, tabletoperators, tournament) {
 	});
 }
 
+function get_tabletoperator_break_after_service_ms(tournament) {
+	if (!tournament?.tabletoperator_set_break_after_tabletservice) {
+		return 0;
+	}
+	const seconds = Number(tournament?.tabletoperator_break_seconds);
+	if (!Number.isFinite(seconds) || seconds <= 0) {
+		return 0;
+	}
+	return Math.round(seconds * 1000);
+}
+
+function get_tabletoperator_ready_ts_after_service(tournament, end_ts) {
+	const base_ts = Number(end_ts);
+	if (!Number.isFinite(base_ts)) {
+		return end_ts;
+	}
+	return base_ts + get_tabletoperator_break_after_service_ms(tournament);
+}
+
 function get_technical_official_break_after_assignment_ms(tournament) {
 	const seconds = Number(tournament?.technical_official_break_after_assignment_seconds);
 	if (!Number.isFinite(seconds) || seconds <= 0) {
@@ -1082,7 +1101,7 @@ const fetch_tabletoperator = serialized(get_last_looser_on_court);
 
 function get_last_looser_on_court(admin, app, tkey, court_id) {
 	return new Promise((resolve, reject) => {
-		const tabletoperator_querry = { 'tournament_key': tkey, court: null };
+		const tabletoperator_querry = { 'tournament_key': tkey, court: null, start_ts: { $lte: now_ms(app) } };
 		let tabletoperators = undefined;
 		app.db.tabletoperators.find(tabletoperator_querry).sort({ 'start_ts': 1 }).limit(1).exec((err, tabletoperator) => {
 			if (err) {
@@ -1261,6 +1280,7 @@ function add_player_to_tabletoperator_list_by_match(app, tournament, tournament_
 				}
 
 				if (team && typeof team.players !== 'undefined') {
+					const tabletoperator_ready_ts = get_tabletoperator_ready_ts_after_service(tournament, end_ts);
 					var teams = [];
 					if (tournament.tabletoperator_split_doubles && team.players.length > 1) {
 						for (const player of team.players) {
@@ -1294,7 +1314,7 @@ function add_player_to_tabletoperator_list_by_match(app, tournament, tournament_
 							tournament_key,
 							tabletoperator,
 							'match_id': cur_match._id,
-							'start_ts': end_ts,
+							'start_ts': tabletoperator_ready_ts,
 							'end_ts': null,
 							'court': null,
 							'played_on_court': (cur_match.setup.court_id ? cur_match.setup.court_id : null)
@@ -1563,13 +1583,15 @@ function reset_tabletoperator_settings_at_player(app, tkey, tournament, player, 
 
 	player.now_tablet_on_court = false;
 	const now = now_ms(app);
-	if (tournament.tabletoperator_set_break_after_tabletservice && 
-		(now + (parseInt(tournament.tabletoperator_break_seconds) * 1000)) >=  player.last_time_on_court_ts + tournament.btp_settings.pause_duration_ms) {
-		var offset = 0;		
-		if (tournament.tabletoperator_break_seconds) {
-			offset = (parseInt(tournament.tabletoperator_break_seconds) * 1000) - tournament.btp_settings.pause_duration_ms;
-		}
-		player.last_time_on_court_ts = end_ts + offset;
+	const tabletoperator_break_ms = get_tabletoperator_break_after_service_ms(tournament);
+	const service_end_ts = Number.isFinite(Number(end_ts)) ? Number(end_ts) : now;
+	const player_pause_end_ts = Number.isFinite(Number(player.last_time_on_court_ts))
+		? Number(player.last_time_on_court_ts) + Number(tournament?.btp_settings?.pause_duration_ms || 0)
+		: 0;
+	const tablet_break_until_ts = service_end_ts + tabletoperator_break_ms;
+	if (tournament.tabletoperator_set_break_after_tabletservice && tablet_break_until_ts > player_pause_end_ts) {
+		player.tablet_last_time_on_court_ts = service_end_ts;
+		player.tablet_break_until_ts = tablet_break_until_ts;
 		player.checked_in = false;
 		player.tablet_break_active = true;
 		btp_manager.update_players(app, tkey, [player]);
@@ -2226,7 +2248,7 @@ function auto_call_matches_on_free_courts(app, tournament_key, callback) {
 					return continue_with_tabletoperators([]);
 				}
 
-				app.db.tabletoperators.find({ tournament_key, court: null }, (tabletErr, tabletoperators) => {
+				app.db.tabletoperators.find({ tournament_key, court: null, start_ts: { $lte: now_ms(app) } }, (tabletErr, tabletoperators) => {
 					if (tabletErr) {
 						return callback ? callback(tabletErr) : null;
 					}
@@ -2270,6 +2292,14 @@ async function call_next_possible_match_for_preparation(app, tournament_key, cal
 												possible = true;
 											} else {
 												possible = false;
+											}
+										}
+										if (possible) {
+											if (player.tablet_break_active === true) {
+												const tablet_break_until_ts = Number(player.tablet_break_until_ts);
+												if (Number.isFinite(tablet_break_until_ts) && now < tablet_break_until_ts) {
+													possible = false;
+												}
 											}
 										}
 										if (possible) {
