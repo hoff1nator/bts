@@ -381,6 +381,7 @@ async function handle_score_update(app, ws, msg) {
 							team1_won: update.team1_won,
 							shuttle_count: update.shuttle_count,
 							presses: updated_match.presses,
+							end_ts: updated_match.end_ts,
 							court_id: updated_match.setup && updated_match.setup.court_id,
 							now_on_court: updated_match.setup && updated_match.setup.now_on_court,
 						});
@@ -685,6 +686,7 @@ async function confirm_match_finished_from_admin(app, tournament_key, match_id, 
 			team1_won: updated_match.team1_won,
 			shuttle_count: updated_match.shuttle_count,
 			presses: updated_match.presses,
+			end_ts: updated_match.end_ts,
 			court_id: updated_match.setup && updated_match.setup.court_id,
 			now_on_court: updated_match.setup && updated_match.setup.now_on_court,
 		});

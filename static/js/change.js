@@ -159,6 +159,9 @@ function default_handler(rerender, special_funcs) {
 		m.network_score = cval.network_score;
 		m.presses = cval.presses;
 		m.team1_won = cval.team1_won;
+		if (cval.end_ts !== undefined) {
+			m.end_ts = cval.end_ts;
+		}
 	}
 
 	function apply_umpires_changed(update, deps) {

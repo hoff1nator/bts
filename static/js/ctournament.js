@@ -163,6 +163,9 @@ var ctournament = (function() {
 		m.presses = cval.presses;
 		m.team1_won = cval.team1_won;
 		m.shuttle_count = cval.shuttle_count;
+		if (cval.end_ts !== undefined) {
+			m.end_ts = cval.end_ts;
+		}
 		if (cval.court_id !== undefined) {
 			m.setup.court_id = cval.court_id;
 		}
@@ -242,6 +245,9 @@ var ctournament = (function() {
 			m.presses = cval.match.presses;
 			m.team1_won = cval.match.team1_won;
 			m.shuttle_count = cval.match.shuttle_count;
+			if ('end_ts' in cval.match) {
+				m.end_ts = cval.match.end_ts;
+			}
 			m.setup = cval.match.setup;
 			m.btp_winner = cval.match.btp_winner;
 		}
@@ -292,6 +298,9 @@ var ctournament = (function() {
 		m.presses = cval.match.presses;
 		m.team1_won = cval.match.team1_won;
 		m.shuttle_count = cval.match.shuttle_count;
+		if ('end_ts' in cval.match) {
+			m.end_ts = cval.match.end_ts;
+		}
 		m.setup = cval.match.setup;
 		m.btp_winner = cval.match.btp_winner;
 		const new_section = cmatch.calc_section(m);

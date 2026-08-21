@@ -2813,6 +2813,7 @@ async function handle_score_update(app, ws, msg) {
 			if (score_data.shuttle_count) {
 				update.shuttle_count = score_data.shuttle_count;
 			}
+			const score_indicates_finished = !!score_data.end_ts || typeof score_data.team1_won === 'boolean';
 
 			const simulated_match = {
 				...match,
@@ -2840,7 +2841,7 @@ async function handle_score_update(app, ws, msg) {
 				(updated_match, cb) => {
 					if (updated_match) {
 						handle_score_change(app, tournament_key, updated_match.setup.court_id, {
-							skip_umpire_ws: ws,
+							skip_umpire_ws: score_indicates_finished ? null : ws,
 						});
 						admin.notify_change(app, tournament_key, 'score', {
 							match_id,
@@ -2848,6 +2849,7 @@ async function handle_score_update(app, ws, msg) {
 							team1_won: update.team1_won,
 							shuttle_count: update.shuttle_count,
 							presses: updated_match.presses,
+							end_ts: updated_match.end_ts,
 							court_id: updated_match.setup && updated_match.setup.court_id,
 							now_on_court: updated_match.setup && updated_match.setup.now_on_court,
 						});
