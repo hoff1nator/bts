@@ -830,6 +830,21 @@ a:hover {
 	color: #9b1c1c;
 }
 
+.tournament_reset_hint {
+	color: #5c1f1f;
+}
+
+.tournament_reset_button {
+	background: #b3261e;
+	border: 1px solid #7f1711;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.tournament_reset_button:hover {
+	background: #931b15;
+}
+
 .dialog_bg {
 	position: fixed;
 	left: 0;

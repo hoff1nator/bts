@@ -3249,6 +3249,38 @@ var ctournament = (function() {
 				back_btn.addEventListener('click', () => {
 					ui_show();
 				});
+
+				const reset_hint = uiu.el(save_div, 'p', {
+					class: 'tournament_reset_hint',
+				}, ci18n('tournament:edit:reset:hint'));
+				reset_hint.style.maxWidth = '60em';
+
+				const reset_btn = uiu.el(save_div, 'button', {
+					type: 'button',
+					class: 'tournament_reset_button',
+				}, ci18n('tournament:edit:reset'));
+				reset_btn.addEventListener('click', () => {
+					const expected = curt.key || 'default';
+					if (!window.confirm(ci18n('tournament:edit:reset:confirm'))) {
+						return;
+					}
+					const entered = window.prompt(ci18n('tournament:edit:reset:prompt').replace('{key}', expected), '');
+					if (entered !== expected) {
+						if (entered != null) {
+							window.alert(ci18n('tournament:edit:reset:cancelled'));
+						}
+						return;
+					}
+					send_with_live_status({
+						type: 'tournament_reset',
+						tournament_key: curt.key,
+					}, (err) => {
+						if (err) {
+							return cerror.net(err);
+						}
+						refresh_current_view();
+					});
+				});
 			}		
 			update_edit_dependencies();
 		}

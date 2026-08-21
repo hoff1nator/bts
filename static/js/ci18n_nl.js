@@ -146,6 +146,11 @@ var ci18n_nl = Object.assign(
 	'tournament:edit': 'Beheer instellingen',
 	'tournament:edit:save': 'Opslaan',
 	'tournament:edit:save_and_back': 'Opslaan en terug naar toernooioverzicht',
+	'tournament:edit:reset': 'Toernooi resetten',
+	'tournament:edit:reset:hint': 'Verwijdert wedstrijden, tabletbedieners, logs, banen, locaties en officials. Normalisaties, BTP-instellingen, scherminstellingen en apparaatkoppelingen blijven behouden.',
+	'tournament:edit:reset:confirm': 'Het toernooi wordt lokaal leeggemaakt. Herbruikbare instellingen blijven behouden. Doorgaan?',
+	'tournament:edit:reset:prompt': 'Voer toernooi-id "{key}" in om te resetten.',
+	'tournament:edit:reset:cancelled': 'Reset afgebroken: de ingevoerde toernooi-id klopt niet.',
 
 	'tournament:edit:tournament:type': 'Type toernooi:',
 	'tournament:edit:id': 'Toernooi-id:',

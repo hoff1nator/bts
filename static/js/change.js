@@ -444,6 +444,24 @@ function default_handler(rerender, special_funcs) {
 		case 'queue_hang_warning':
 			cerror.silent('BTS hängt in Aufgabe "' + c.val.task + '" seit ' + Math.round((c.val.runtime_ms || 0) / 1000) + 's.');
 			break;
+		case 'tournament_reset':
+			if (c.val && c.val.tournament) {
+				Object.assign(curt, c.val.tournament);
+			}
+			curt.matches = [];
+			curt.tabletoperators = [];
+			curt.logs = [];
+			curt.courts = [];
+			curt.locations = [];
+			curt.umpires = [];
+			curt.courts_by_id = {};
+			curt.locations_by_id = {};
+			if (ctournament && typeof ctournament.refresh_current_view === 'function') {
+				ctournament.refresh_current_view();
+			} else {
+				rerender();
+			}
+			break;
 		case 'normalization_add':
 			ctournament.add_normalization(c);
 			break;

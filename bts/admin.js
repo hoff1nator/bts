@@ -927,6 +927,62 @@ function handle_create_tournament(app, ws, msg) {
 	});
 }
 
+async function reset_tournament_to_empty_default(app, tournament_key) {
+	const tournament = await app.db.tournaments.findOne_async({ key: tournament_key });
+	if (!tournament) {
+		throw new Error('No tournament ' + tournament_key);
+	}
+
+	const reset_ts = now_ms(app);
+	const tournament_patch = {
+		name: 'Default',
+		events: { events: [] },
+		certificate_exports: {},
+		last_reset_ts: reset_ts,
+	};
+
+	await app.db.matches.remove_async({ tournament_key }, { multi: true });
+	await app.db.tabletoperators.remove_async({ tournament_key }, { multi: true });
+	await app.db.logs.remove_async({ tournament_key }, { multi: true });
+	await app.db.courts.remove_async({ tournament_key }, { multi: true });
+	await app.db.locations.remove_async({ tournament_key }, { multi: true });
+	await app.db.umpires.remove_async({ tournament_key }, { multi: true });
+
+	const [, updated_tournament] = await app.db.tournaments.update_async(
+		{ key: tournament_key },
+		{ $set: tournament_patch, $unset: { tguid: true } },
+		{ returnUpdatedDocs: true },
+	);
+
+	await displaysettings_defaults.ensure_default_displaysettings(app, updated_tournament || { ...tournament, ...tournament_patch });
+	return {
+		tournament_key,
+		tournament: updated_tournament || { ...tournament, ...tournament_patch },
+		reset_ts,
+	};
+}
+
+async function handle_tournament_reset(app, ws, msg) {
+	if (!_require_msg(ws, msg, ['tournament_key'])) {
+		return;
+	}
+
+	try {
+		const result = await reset_tournament_to_empty_default(app, msg.tournament_key);
+		notify_change(app, msg.tournament_key, 'tournament_reset', {
+			tournament: result.tournament,
+			reset_ts: result.reset_ts,
+		});
+		const bupws = require('./bupws');
+		bupws.refresh_protocol_mode(app, msg.tournament_key).catch((refreshErr) => {
+			console.warn('[bts] failed to refresh BUP clients after tournament reset', refreshErr && (refreshErr.stack || refreshErr.message || String(refreshErr)));
+		});
+		return ws.respond(msg, null, result);
+	} catch (err) {
+		return ws.respond(msg, err);
+	}
+}
+
 function _extract_setup(msg_setup) {
 	const setup = utils.pluck(msg_setup, [
 		'court_id',
@@ -3678,6 +3734,7 @@ module.exports = {
 	handle_clock_get,
 	handle_clock_set,
 	handle_create_tournament,
+	handle_tournament_reset,
 	handle_courts_add,
 	handle_court_edit,
 	handle_location_changed,
@@ -3733,4 +3790,5 @@ module.exports = {
 	_build_match_edit_official_sync_meta,
 	_collect_dependent_official_releases,
 	_remove_official_from_setup,
+	reset_tournament_to_empty_default,
 };
