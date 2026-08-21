@@ -466,6 +466,7 @@ var ctournament = (function() {
 			'tabletoperator_winner_of_quaterfinals_enabled',
 			'tabletoperator_use_manual_counting_boards_enabled',
 			'tabletoperator_split_doubles',
+			'tabletoperator_assignment_scope',
 			'tabletoperator_with_state_enabled',
 			'tabletoperator_with_state_from_match_enabled',
 			'tabletoperator_set_break_after_tabletservice',
@@ -3078,6 +3079,7 @@ var ctournament = (function() {
 			input.tabletoperator_winner_of_quaterfinals_enabled     = create_checkbox(curt, tablet_fieldset, 'tabletoperator_winner_of_quaterfinals_enabled');
 			input.tabletoperator_use_manual_counting_boards_enabled = create_checkbox(curt, tablet_fieldset, 'tabletoperator_use_manual_counting_boards_enabled');
 			input.tabletoperator_split_doubles                      = create_checkbox(curt, tablet_fieldset, 'tabletoperator_split_doubles');
+			input.tabletoperator_assignment_scope                   = create_rule_select_input(curt, tablet_fieldset, 'tabletoperator_assignment_scope', ['any', 'same_location', 'same_court'], () => 'any');
 			input.tabletoperator_with_state_enabled                 = create_checkbox(curt, tablet_fieldset, 'tabletoperator_with_state_enabled');
 			input.tabletoperator_with_state_from_match_enabled      = create_checkbox(curt, tablet_fieldset, 'tabletoperator_with_state_from_match_enabled');
 			input.tabletoperator_set_break_after_tabletservice      = create_checkbox(curt, tablet_fieldset, 'tabletoperator_set_break_after_tabletservice');

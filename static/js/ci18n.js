@@ -109,7 +109,7 @@ if ((typeof module !== 'undefined') && (typeof require !== 'undefined')) {
 	var utils = require('../bup/dev/js/utils');
 	var ci18n_de = require('./ci18n_de');
 	var ci18n_en = require('./ci18n_en');
-	var ci18n_en = require('./ci18n_nl');
+	var ci18n_nl = require('./ci18n_nl');
 	ci18n.register_all();
 
 	module.exports = ci18n;

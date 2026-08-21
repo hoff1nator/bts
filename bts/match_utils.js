@@ -88,24 +88,59 @@ function cmp_court_order(c1, c2) {
 	return String(a.value).localeCompare(String(b.value), 'de', { numeric: true, sensitivity: 'base' });
 }
 
-function sort_free_courts_for_auto_call(courts, tabletoperators, tournament) {
+function sort_free_courts_for_auto_call(courts, tabletoperators, tournament, all_courts) {
 	const free_courts = Array.isArray(courts) ? [...courts] : [];
 	if (tournament?.tabletoperator_enabled !== true) {
 		return free_courts.sort(cmp_court_order);
 	}
 
 	const free_court_ids = new Set(free_courts.map((court) => court?._id).filter(Boolean));
+	const free_courts_by_location_id = new Map();
+	const court_location_by_id = new Map();
+	(Array.isArray(all_courts) ? all_courts : free_courts).forEach((court) => {
+		if (court?._id && court.location_id) {
+			court_location_by_id.set(court._id, court.location_id);
+		}
+	});
+	free_courts.forEach((court) => {
+		if (!court?._id) {
+			return;
+		}
+		if (court.location_id) {
+			if (!free_courts_by_location_id.has(court.location_id)) {
+				free_courts_by_location_id.set(court.location_id, []);
+			}
+			free_courts_by_location_id.get(court.location_id).push(court._id);
+		}
+	});
+
 	const preferred_court_index = new Map();
+	const scope = normalize_tabletoperator_assignment_scope(tournament);
 
 	(Array.isArray(tabletoperators) ? [...tabletoperators] : [])
 		.filter((tabletoperator) => tabletoperator && tabletoperator.court == null)
 		.sort((a, b) => Number(a.start_ts || 0) - Number(b.start_ts || 0))
 		.forEach((tabletoperator, index) => {
 			const played_on_court = tabletoperator?.played_on_court;
-			if (!played_on_court || !free_court_ids.has(played_on_court) || preferred_court_index.has(played_on_court)) {
+			if (!played_on_court) {
 				return;
 			}
-			preferred_court_index.set(played_on_court, index);
+			if (free_court_ids.has(played_on_court) && !preferred_court_index.has(played_on_court)) {
+				preferred_court_index.set(played_on_court, index);
+			}
+			if (scope !== 'same_location') {
+				return;
+			}
+
+			const played_location_id = court_location_by_id.get(played_on_court);
+			if (!played_location_id) {
+				return;
+			}
+			(free_courts_by_location_id.get(played_location_id) || []).forEach((court_id) => {
+				if (!preferred_court_index.has(court_id)) {
+					preferred_court_index.set(court_id, index);
+				}
+			});
 		});
 
 	return free_courts.sort((c1, c2) => {
@@ -135,6 +170,59 @@ function get_tabletoperator_ready_ts_after_service(tournament, end_ts) {
 		return end_ts;
 	}
 	return base_ts + get_tabletoperator_break_after_service_ms(tournament);
+}
+
+function normalize_tabletoperator_assignment_scope(tournament) {
+	const scope = tournament?.tabletoperator_assignment_scope;
+	if (scope === 'same_location' || scope === 'same_court') {
+		return scope;
+	}
+	return 'any';
+}
+
+function is_manual_tabletoperator_entry(tabletoperator_entry) {
+	return !tabletoperator_entry?.played_on_court;
+}
+
+async function build_court_location_map(app, tournament_key) {
+	const courts = await app.db.courts.find_async({ tournament_key });
+	const result = new Map();
+	(Array.isArray(courts) ? courts : []).forEach((court) => {
+		if (court?._id && court.location_id) {
+			result.set(court._id, court.location_id);
+		}
+	});
+	return result;
+}
+
+async function select_tabletoperator_for_court(app, tournament, tabletoperators, court_id) {
+	const candidates = Array.isArray(tabletoperators) ? tabletoperators : [];
+	if (candidates.length < 1) {
+		return null;
+	}
+
+	const scope = normalize_tabletoperator_assignment_scope(tournament);
+	if (scope === 'any' || !court_id || court_id === 'prep_call') {
+		return candidates[0];
+	}
+
+	const manual_candidates = candidates.filter(is_manual_tabletoperator_entry);
+	const played_candidates = candidates.filter((entry) => !is_manual_tabletoperator_entry(entry));
+	if (scope === 'same_court') {
+		return played_candidates.find((entry) => entry.played_on_court === court_id)
+			|| manual_candidates[0]
+			|| null;
+	}
+
+	const court_location_by_id = await build_court_location_map(app, tournament.key);
+	const target_location_id = court_location_by_id.get(court_id);
+	if (!target_location_id) {
+		return manual_candidates[0] || null;
+	}
+
+	return played_candidates.find((entry) => court_location_by_id.get(entry.played_on_court) === target_location_id)
+		|| manual_candidates[0]
+		|| null;
 }
 
 function get_technical_official_break_after_assignment_ms(tournament) {
@@ -923,7 +1011,7 @@ async function add_tabletoperators(app, tournament, match, callback) {
         if (is_tournament_automation_enabled(tournament) && (tournament.tabletoperator_enabled && tournament.tabletoperator_enabled == true)) {
             if (!setup.tabletoperators || setup.tabletoperators == null) {
                 
-				const fetch_result = await fetch_tabletoperator(admin, app, tournament.key, court_id);
+				const fetch_result = await fetch_tabletoperator(admin, app, tournament, court_id);
 				let value = [];
 				if (tournament.tabletoperator_with_state_from_match_enabled && typeof(fetch_result) == "undefined") {
 					value.push({
@@ -1099,18 +1187,24 @@ function serialized(fn) {
 
 const fetch_tabletoperator = serialized(get_last_looser_on_court);
 
-function get_last_looser_on_court(admin, app, tkey, court_id) {
+function get_last_looser_on_court(admin, app, tournament, court_id) {
 	return new Promise((resolve, reject) => {
+		const tkey = tournament?.key || tournament;
 		const tabletoperator_querry = { 'tournament_key': tkey, court: null, start_ts: { $lte: now_ms(app) } };
-		let tabletoperators = undefined;
-		app.db.tabletoperators.find(tabletoperator_querry).sort({ 'start_ts': 1 }).limit(1).exec((err, tabletoperator) => {
+		app.db.tabletoperators.find(tabletoperator_querry).sort({ 'start_ts': 1 }).exec(async (err, tabletoperator) => {
 			if (err) {
 				return reject(err);
 			}
 			var returnvalue = undefined;
-			if (tabletoperator && tabletoperator.length == 1) {
-				returnvalue = tabletoperator[0].tabletoperator
-				app.db.tabletoperators.update({ _id: tabletoperator[0]._id, tournament_key: tkey }, { $set: { court: court_id } }, { returnUpdatedDocs: true }, function (err, numAffected, changed_tabletoperator) {
+			let selected_tabletoperator = null;
+			try {
+				selected_tabletoperator = await select_tabletoperator_for_court(app, tournament, tabletoperator, court_id);
+			} catch (selection_err) {
+				return reject(selection_err);
+			}
+			if (selected_tabletoperator) {
+				returnvalue = selected_tabletoperator.tabletoperator
+				app.db.tabletoperators.update({ _id: selected_tabletoperator._id, tournament_key: tkey }, { $set: { court: court_id } }, { returnUpdatedDocs: true }, function (err, numAffected, changed_tabletoperator) {
 					if (err) {
 						return reject(err);
 					}
@@ -2202,7 +2296,8 @@ function auto_call_matches_on_free_courts(app, tournament_key, callback) {
 					const free_active_courts = sort_free_courts_for_auto_call(
 						(courts || []).filter((court) => court && !occupied_court_ids.has(court._id)),
 						tabletoperators,
-						tournament
+						tournament,
+						courts || []
 					);
 					debug_flags.log(app, tournament_key, '[bts] auto_call_trace:auto_call_matches_on_free_courts', {
 						ts: now_ms(app),
@@ -2379,7 +2474,7 @@ async function call_match_in_preparation(app, tournament, match, location_id, ca
 		if (is_tournament_automation_enabled(tournament) && tournament.preparation_tabletoperator_setup_enabled) {
 			if (!setup.umpire || (tournament.tabletoperator_with_umpire_enabled && tournament.tabletoperator_with_umpire_enabled == true)) {
 				if (!setup.tabletoperators || setup.tabletoperators == null) {
-					const fetch_result = await fetch_tabletoperator(admin, app, tournament.key, "prep_call");
+					const fetch_result = await fetch_tabletoperator(admin, app, tournament, "prep_call");
 					let value = [];
 					if (tournament.tabletoperator_with_state_from_match_enabled && typeof(fetch_result) == "undefined") {
 						value.push({

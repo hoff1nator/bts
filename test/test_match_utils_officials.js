@@ -642,4 +642,26 @@ _describe('match utils official state helpers', () => {
 
 		assert.deepStrictEqual(sorted.map((court) => court._id), ['c2', 'c1', 'c3']);
 	});
+
+	_it('prefers free courts in the tabletoperator location when location scope is enabled', () => {
+		const sorted = match_utils.sort_free_courts_for_auto_call(
+			[
+				{ _id: 'c1', num: 1, location_id: 'l1' },
+				{ _id: 'c2', num: 2, location_id: 'l2' },
+				{ _id: 'c3', num: 3, location_id: 'l3' },
+			],
+			[
+				{ _id: 'to1', court: null, played_on_court: 'c5', start_ts: 10 },
+			],
+			{ tabletoperator_enabled: true, tabletoperator_assignment_scope: 'same_location' },
+			[
+				{ _id: 'c1', num: 1, location_id: 'l1' },
+				{ _id: 'c2', num: 2, location_id: 'l2' },
+				{ _id: 'c3', num: 3, location_id: 'l3' },
+				{ _id: 'c5', num: 5, location_id: 'l2' },
+			]
+		);
+
+		assert.deepStrictEqual(sorted.map((court) => court._id), ['c2', 'c1', 'c3']);
+	});
 });

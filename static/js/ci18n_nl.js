@@ -198,6 +198,11 @@ var ci18n_nl = Object.assign(
 	'tournament:edit:tabletoperator_set_break_after_tabletservice': 'Pauze instellen na tabletbediening',
 	'tournament:edit:tabletoperator_break_seconds': 'Pauzetijd na tabletgebruik (sec)',
 	'tournament:edit:tabletoperator_split_doubles': 'Splits dubbels voor tabletbediening',
+	'tournament:edit:tabletoperator_assignment_scope': 'Tabletgebruikerselectie beperken',
+	'tournament:edit:tabletoperator_assignment_scope:value': 'Selectie:',
+	'tournament:edit:option:tabletoperator_assignment_scope:any': 'Geen beperking',
+	'tournament:edit:option:tabletoperator_assignment_scope:same_location': 'Alleen dezelfde locatie',
+	'tournament:edit:option:tabletoperator_assignment_scope:same_court': 'Alleen dezelfde baan',
 	'tournament:edit:tabletoperator_with_state_enabled': 'Roep bond/club op i.p.v. speler',
 	'tournament:edit:tabletoperator_with_state_from_match_enabled': 'Roep bond/club op van eerste speler in wedstrijd',
 	'tournament:edit:tabletoperator_with_umpire_enabled': 'Kondig scheidsrechter en tabletgebruiker aan',
@@ -296,6 +301,6 @@ var ci18n_nl = Object.assign(
 
 /*@DEV*/
 if ((typeof module !== 'undefined') && (typeof require !== 'undefined')) {
-	module.exports = ci18n_en;
+	module.exports = ci18n_nl;
 }
 /*/@DEV*/
