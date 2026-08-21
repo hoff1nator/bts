@@ -435,6 +435,12 @@ let announcementSpeechCheckState = {
     updated_at: null,
 };
 
+function announcementDebugLog(...args) {
+    if (curt && curt.bts_debug_output_enabled === true) {
+        console.log(...args);
+    }
+}
+
 function readAnnouncementSpeechCheckStateStorage() {
     try {
         const raw = window.localStorage.getItem(ANNOUNCEMENT_SPEECH_CHECK_STATE_KEY);
@@ -810,7 +816,7 @@ function playAnnouncementBatch(parts, voice, done, claimKey) {
             batchStarted = true;
             utteranceStarted = true;
             utteranceStartedAt = Date.now();
-            console.log('[bts] announcement utterance start', {
+            announcementDebugLog('[bts] announcement utterance start', {
                 claimKey: claimKey || null,
                 index,
                 part: filteredParts[index],
@@ -824,7 +830,7 @@ function playAnnouncementBatch(parts, voice, done, claimKey) {
                     batchStatus = 'suspicious';
                 }
             }
-            console.log('[bts] announcement utterance end', {
+            announcementDebugLog('[bts] announcement utterance end', {
                 claimKey: claimKey || null,
                 index,
                 part: filteredParts[index],
@@ -835,7 +841,7 @@ function playAnnouncementBatch(parts, voice, done, claimKey) {
         };
         words.onerror = function (event) {
             batchStatus = 'error';
-            console.log('[bts] announcement utterance error', {
+            announcementDebugLog('[bts] announcement utterance error', {
                 claimKey: claimKey || null,
                 index,
                 part: filteredParts[index],
@@ -930,12 +936,12 @@ function processAnnouncementPlaybackQueue() {
     announcementPlaybackActive = true;
     getAnnouncementVoices().then((voices) => {
         const voice = findAnnouncementVoice(voices);
-        console.log('[bts] announcement batch start', {
+        announcementDebugLog('[bts] announcement batch start', {
             claimKey: nextBatch.claimKey || null,
             parts: (nextBatch.callArray || []).filter(Boolean),
         });
         playAnnouncementBatch(nextBatch.callArray, voice, (status) => {
-            console.log('[bts] announcement batch end', {
+            announcementDebugLog('[bts] announcement batch end', {
                 claimKey: nextBatch.claimKey || null,
             });
             if (status === 'ok' || status === 'active') {
@@ -957,7 +963,7 @@ function processAnnouncementPlaybackQueue() {
             }, pauseMs);
         }, nextBatch.claimKey);
     }).catch(() => {
-        console.log('[bts] announcement batch end', {
+        announcementDebugLog('[bts] announcement batch end', {
             claimKey: nextBatch.claimKey || null,
             error: true,
         });
@@ -976,7 +982,7 @@ function announce(callArray, local, claimKey, options) {
             allowRetry: resolvedOptions.allowRetry !== false,
         });
         if (!local) {
-            console.log(`[bts] announcement played ${claimKey}`);
+            announcementDebugLog(`[bts] announcement played ${claimKey}`);
         }
         processAnnouncementPlaybackQueue();
     };
@@ -988,17 +994,17 @@ function announce(callArray, local, claimKey, options) {
 
     Promise.resolve(ensureAnnouncementLeaderLock()).then((isLeader) => {
         if (!isLeader) {
-            console.log(`[bts] announcement skipped ${claimKey}`);
+            announcementDebugLog(`[bts] announcement skipped ${claimKey}`);
             return;
         }
         return Promise.resolve(claimAnnouncementPlayback(callArray, claimKey)).then((claimed) => {
             if (!claimed) {
-                console.log(`[bts] announcement skipped ${claimKey}`);
+                announcementDebugLog(`[bts] announcement skipped ${claimKey}`);
                 return;
             }
             enqueue(options || {});
         });
     }).catch(() => {
-        console.log(`[bts] announcement skipped ${claimKey}`);
+        announcementDebugLog(`[bts] announcement skipped ${claimKey}`);
     });
 }

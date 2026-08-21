@@ -1281,7 +1281,7 @@ function create_event_representation(tournament) {
 			}
 			res.tournament_logo_url = `/h/${encodeURIComponent(tournament.key)}/${filename}`;
 		} catch (error) {
-			console.log("A error occured during generating QR-Code for displays");
+			console.error("An error occurred while generating the display QR code:", error);
 		}
 	}
 	res.tournament_logo_background_color = tournament.logo_background_color || '#000000';

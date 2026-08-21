@@ -3008,22 +3008,6 @@ var ctournament = (function() {
 				input.preparation_call_matches_ahead_of_frontier_enabled = rule.enabled_input;
 				input.preparation_call_matches_ahead_of_frontier_limit = rule.value_input;
 			}
-			{
-				const debug_output_label = uiu.el(bts_fieldset, 'label', 'automation_suboption_checkbox');
-				input.preparation_call_debug_output_enabled = uiu.el(debug_output_label, 'input', {
-					type: 'checkbox',
-					name: 'preparation_call_debug_output_enabled',
-					checked: curt.preparation_call_debug_output_enabled ? 'checked' : undefined,
-				});
-				uiu.el(debug_output_label, 'span', {}, 'Debug-Ausgabe fuer Vorbereitungsauswahl');
-				bind_live_prop(input.preparation_call_debug_output_enabled, 'preparation_call_debug_output_enabled', {
-					on_success: function() {
-						uiu.qsEach('.unassigned_container', function(unassigned_container) {
-							cmatch.render_unassigned(unassigned_container);
-						});
-					},
-				});
-			}
 			const free_courts_fieldset = uiu.el(tournament_flow_div, 'fieldset', 'automation_group_box');
 			const free_courts_legend = uiu.el(free_courts_fieldset, 'legend');
 			input.call_next_possible_scheduled_match_in_preparation = uiu.el(free_courts_legend, 'input', {
@@ -3174,11 +3158,37 @@ var ctournament = (function() {
 
 			input.bupws_v2_enabled = create_checkbox(curt, default_display_fieldset, 'bupws_v2_enabled');
 			input.bup_v2_admin_wait_for_score_updates = create_checkbox(curt, default_display_fieldset, 'bup_v2_admin_wait_for_score_updates');
-			input.bts_debug_output_enabled = create_checkbox(curt, default_display_fieldset, 'bts_debug_output_enabled');
 
 			const general_displaysettings_div = uiu.el(devices_div, 'div', 'general_displaysettings');
 			render_general_displaysettings(general_displaysettings_div);
 			render_displaysettings(devices_div);
+		}
+
+		// debug-div##################################################################################
+		{
+			const debug_div = uiu.el(form, 'div', 'settings');
+			uiu.el(debug_div, 'h2', 'edit', ci18n('tournament:edit:debug_output'));
+			const debug_fieldset = uiu.el(debug_div, 'fieldset');
+			uiu.el(debug_fieldset, 'div', 'hint', ci18n('tournament:edit:debug_output_hint'));
+			input.bts_debug_output_enabled = create_checkbox(curt, debug_fieldset, 'bts_debug_output_enabled');
+			uiu.el(debug_fieldset, 'div', 'hint', ci18n('tournament:edit:bts_debug_output_enabled:hint'));
+			input.bts_auto_call_trace_enabled = create_checkbox(curt, debug_fieldset, 'bts_auto_call_trace_enabled');
+			uiu.el(debug_fieldset, 'div', 'hint', ci18n('tournament:edit:bts_auto_call_trace_enabled:hint'));
+			const preparation_debug_label = uiu.el(debug_fieldset, 'label');
+			input.preparation_call_debug_output_enabled = uiu.el(preparation_debug_label, 'input', {
+				type: 'checkbox',
+				name: 'preparation_call_debug_output_enabled',
+				checked: curt.preparation_call_debug_output_enabled ? 'checked' : undefined,
+			});
+			uiu.el(preparation_debug_label, 'span', {}, ci18n('tournament:edit:preparation_call_debug_output_enabled'));
+			bind_live_prop(input.preparation_call_debug_output_enabled, 'preparation_call_debug_output_enabled', {
+				on_success: function() {
+					uiu.qsEach('.unassigned_container', function(unassigned_container) {
+						cmatch.render_unassigned(unassigned_container);
+					});
+				},
+			});
+			uiu.el(debug_fieldset, 'div', 'hint', ci18n('tournament:edit:preparation_call_debug_output_enabled:hint'));
 		}
 
 

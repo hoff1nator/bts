@@ -19,31 +19,6 @@ function resolve_current_now_ms(current_now_ms) {
 	return Number.isFinite(normalized) ? normalized : Date.now();
 }
 
-function _is_pause_debug_player(player) {
-	if (process.env.BTP_PAUSE_DEBUG !== '1') {
-		return false;
-	}
-	if (!player) {
-		return false;
-	}
-	const firstname = String(player.firstname || '').trim().toLowerCase();
-	const lastname = String(player.lastname || '').trim().toLowerCase();
-	return (
-		(firstname === 'janice' && lastname === 'grube') ||
-		(firstname === 'emma' && lastname === 'funke') ||
-		(firstname === 'ellen' && lastname === 'simon')
-	);
-}
-
-function _log_pause_debug(stage, payload) {
-	try {
-		console.log('[btp_pause debug]', JSON.stringify({ stage, ...payload }));
-	} catch (err) {
-		console.log('[btp_pause debug]', stage, payload);
-	}
-}
-
-
 function time_str(dt) {
 	return utils.pad(dt.hour, 2, '0') + ':' + utils.pad(dt.minute, 2, '0');
 }
@@ -343,7 +318,7 @@ async function craft_match(app, tkey, btp_id, location_map, court_map, event, st
 				links.from_link = bm.Link;
 			}
 		} catch (err) {
-			console.log(err);
+			console.error(err);
 		}
 
 		if (teams[0].players.length < 1) {
@@ -813,25 +788,8 @@ function _craft_team(par) {
 			pres.last_time_on_court_ts = date.getTime();
 		}
 
-		if (_is_pause_debug_player(pres)) {
-			_log_pause_debug('craft_player_from_btp', {
-				player: `${pres.firstname} ${pres.lastname}`.trim(),
-				btp_id: pres.btp_id || null,
-				last_time_on_court_ts: pres.last_time_on_court_ts || null,
-				btp_last_time_on_court: p.LastTimeOnCourt && p.LastTimeOnCourt[0] ? {
-					year: p.LastTimeOnCourt[0].year,
-					month: p.LastTimeOnCourt[0].month,
-					day: p.LastTimeOnCourt[0].day,
-					hour: p.LastTimeOnCourt[0].hour,
-					minute: p.LastTimeOnCourt[0].minute,
-					second: p.LastTimeOnCourt[0].second,
-					ms: p.LastTimeOnCourt[0].ms,
-				} : null,
-			});
-		}
-
-			if (p.CheckedIn?.length > 0) {
-				pres.checked_in = p.CheckedIn?.[0];
+		if (p.CheckedIn?.length > 0) {
+			pres.checked_in = p.CheckedIn?.[0];
 		}
 
 		try{
@@ -1178,7 +1136,7 @@ async function integrate_matches(app, tkey, btp_state, scoring_formats, location
 		// TODO get all matches upfront here
 		app.db.matches.findOne(query, (err, cur_match) => {
 			if (err) {
-				console.log(err);
+				console.error(err);
 				cb(null);
 				return;
 			};
@@ -1228,17 +1186,6 @@ async function integrate_matches(app, tkey, btp_state, scoring_formats, location
 								current_player.last_time_on_court_ts = max_ts;
 								next_player.last_time_on_court_ts = max_ts;
 
-								if (_is_pause_debug_player(current_player) || _is_pause_debug_player(next_player)) {
-									_log_pause_debug('merge_match_player_pause', {
-										match_id: current_match._id,
-										btp_match_id: current_match.btp_id || match.btp_id || null,
-										player: `${(next_player.firstname || current_player.firstname || '').trim()} ${(next_player.lastname || current_player.lastname || '').trim()}`.trim(),
-										btp_id: next_player.btp_id || current_player.btp_id || null,
-										current_ts,
-										next_ts,
-										merged_ts: max_ts,
-									});
-								}
 							}
 						}
 
@@ -2494,16 +2441,6 @@ function normalize_match_player_pause_state(app, tkey, callback) {
 						continue;
 					}
 					if (player.last_time_on_court_ts !== canonical_last_time) {
-						if (_is_pause_debug_player(player)) {
-							_log_pause_debug('normalize_match_player_pause', {
-								match_id: match._id,
-								btp_match_id: match.btp_id || null,
-								player: `${player.firstname || ''} ${player.lastname || ''}`.trim(),
-								btp_id: player.btp_id,
-								from_ts: player.last_time_on_court_ts || null,
-								to_ts: canonical_last_time,
-							});
-						}
 						player.last_time_on_court_ts = canonical_last_time;
 						changed = true;
 					}
@@ -2546,7 +2483,7 @@ async function get_match_form_db(app, tkey, btp_state, match) {
 
 		app.db.matches.findOne(query, (err, cur_match) => {
 			if (err) {
-				console.log(err);
+				console.error(err);
 				return reject(err);
 			};
 
@@ -3041,7 +2978,7 @@ async function integrate_now_on_court(app, tkey, callback) {
 				const setup = match.setup;
 				if(!setup.called_timestamp) {
 					match_utils.call_match(app, tournament, match, undefined, (err) => {
-						if (err) console.log(err);
+						if (err) console.error(err);
 					});
 				} else {
 					const query = {
