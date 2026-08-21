@@ -2182,13 +2182,33 @@ function render_unassigned(container) {
 	uiu.empty(container);
 	uiu.el(container, 'h3', 'section', ci18n('Unassigned Matches'));
 
+	if (preparation_call_debug_output_enabled()
+		&& curt
+		&& !curt.location_preparation_selection_by_location_id
+		&& ctournament
+		&& typeof ctournament.request_location_preparation_selections === 'function') {
+		ctournament.request_location_preparation_selections();
+	}
+
 	const frontier_debug_entries = preparation_call_debug_output_enabled() ? get_preparation_frontier_debug_entries() : [];
-	if (frontier_debug_entries.length) {
+	if (preparation_call_debug_output_enabled()) {
 		const debug_container = uiu.el(container, 'div', 'preparation_frontier_debug');
 		uiu.el(debug_container, 'span', 'preparation_frontier_debug_label', 'Vorbereitungs-Debug:');
-		frontier_debug_entries.forEach((entry) => {
-			uiu.el(debug_container, 'span', 'preparation_frontier_debug_entry', entry.text);
-		});
+		if (frontier_debug_entries.length) {
+			frontier_debug_entries.forEach((entry) => {
+				uiu.el(debug_container, 'span', 'preparation_frontier_debug_entry', entry.text);
+			});
+		} else {
+			const has_locations = curt && Array.isArray(curt.locations) && curt.locations.length > 0;
+			uiu.el(
+				debug_container,
+				'span',
+				'preparation_frontier_debug_entry',
+				has_locations
+					? 'Keine Debugdaten verfügbar.'
+					: 'Keine Austragungsorte geladen. Debugdaten werden nach dem nächsten Sync verfügbar.',
+			);
+		}
 	}
 
 	const unassigned_matches = curt.matches.filter((m) => {
