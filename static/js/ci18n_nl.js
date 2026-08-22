@@ -151,6 +151,9 @@ var ci18n_nl = Object.assign(
 	'tournament:edit:reset:confirm': 'Het toernooi wordt lokaal leeggemaakt. Herbruikbare instellingen blijven behouden. Doorgaan?',
 	'tournament:edit:reset:prompt': 'Voer toernooi-id "{key}" in om te resetten.',
 	'tournament:edit:reset:cancelled': 'Reset afgebroken: de ingevoerde toernooi-id klopt niet.',
+	'tournament:edit:player_pause_reset': 'Speler-pauzetijden resetten',
+	'tournament:edit:player_pause_reset:hint': 'Reset alle speler-pauzetijden lokaal en in BTP. Alleen beschikbaar wanneer BTP met schrijfrechten verbonden is.',
+	'tournament:edit:player_pause_reset:confirm': 'Alle speler-pauzetijden worden lokaal en in BTP gereset. Doorgaan?',
 
 	'tournament:edit:tournament:type': 'Type toernooi:',
 	'tournament:edit:id': 'Toernooi-id:',

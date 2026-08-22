@@ -448,16 +448,16 @@ class BTPConn {
 
 	update_players(players) {
 		if (this.readonly) {
-			return;
+			return false;
 		}
 
 		if (!players || players.length < 1) {
-			return;
+			return false;
 		}
 
 		if (! this.key_unicode) {
 			//serror.silent('Trying to update player data, but never logged in. Must retry later');
-			return;
+			return false;
 		}
 
 		const req = btp_proto.update_players_request(players, this.key_unicode, this.password);
@@ -470,6 +470,7 @@ class BTPConn {
 				serror.silent('Update Player failed with error code ' + rescode);
 			}
 		});
+		return true;
 	}
 
 	update_courts(courts) {

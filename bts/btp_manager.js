@@ -58,16 +58,16 @@ function update_players(app, tkey, players) {
 	assert(tkey);
 
 	if (!players || players.length < 1) {
-		return;
+		return false;
 	}
 
 	const conn = conns_by_tkey.get(tkey);
 	if (!conn) {
 		// Do not output an error; this happens if BTP support gets disabled
-		return;
+		return false;
 	}
 
-	conn.update_players(players);
+	return conn.update_players(players);
 }
 
 function update_courts(app, tkey, courts) {

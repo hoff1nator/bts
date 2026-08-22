@@ -454,6 +454,7 @@ var ctournament = (function() {
 		_set_disabled_by_name('btp_password', !btp_enabled);
 		_set_disabled_by_name('btp_timezone', !btp_enabled);
 		_set_disabled_by_name('btp_autofetch_timeout_intervall', !btp_enabled || !curt.btp_autofetch_enabled);
+		_set_disabled_by_name('player_pause_reset', !btp_enabled || !!curt.btp_readonly);
 
 		const ticker_enabled = !!curt.ticker_enabled;
 		_set_disabled_by_name('ticker_url', !ticker_enabled);
@@ -3294,6 +3295,31 @@ var ctournament = (function() {
 					}
 					send_with_live_status({
 						type: 'tournament_reset',
+						tournament_key: curt.key,
+					}, (err) => {
+						if (err) {
+							return cerror.net(err);
+						}
+						refresh_current_view();
+					});
+				});
+
+				const pause_reset_hint = uiu.el(save_div, 'p', {
+					class: 'player_pause_reset_hint',
+				}, ci18n('tournament:edit:player_pause_reset:hint'));
+				pause_reset_hint.style.maxWidth = '60em';
+
+				const pause_reset_btn = uiu.el(save_div, 'button', {
+					type: 'button',
+					name: 'player_pause_reset',
+					class: 'player_pause_reset_button',
+				}, ci18n('tournament:edit:player_pause_reset'));
+				pause_reset_btn.addEventListener('click', () => {
+					if (!window.confirm(ci18n('tournament:edit:player_pause_reset:confirm'))) {
+						return;
+					}
+					send_with_live_status({
+						type: 'player_pause_reset',
 						tournament_key: curt.key,
 					}, (err) => {
 						if (err) {

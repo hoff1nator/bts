@@ -219,8 +219,11 @@ function update_players_request(players, key_unicode, password) {
 		if (player.btp_id) {
 			const pupdate = {
 				ID: player.btp_id,
-				CheckedIn: player.checked_in,
 			};
+
+			if (player.checked_in !== undefined) {
+				pupdate.CheckedIn = player.checked_in;
+			}
 			
 			if (player.last_time_on_court_ts) {
 				const end_date = new Date(player.last_time_on_court_ts);

@@ -984,6 +984,112 @@ async function handle_tournament_reset(app, ws, msg) {
 	}
 }
 
+const PLAYER_PAUSE_RESET_TS = Date.UTC(2000, 0, 1, 0, 0, 0, 0);
+
+function collect_players_for_pause_reset(matches) {
+	const players_by_btp_id = new Map();
+	for (const match of matches || []) {
+		for (const team of match?.setup?.teams || []) {
+			for (const player of team?.players || []) {
+				if (!player || !player.btp_id) {
+					continue;
+				}
+				const reset_player = players_by_btp_id.get(player.btp_id) || {
+					btp_id: player.btp_id,
+					last_time_on_court_ts: PLAYER_PAUSE_RESET_TS,
+				};
+				if (player.checked_in !== undefined) {
+					reset_player.checked_in = player.checked_in;
+				}
+				players_by_btp_id.set(player.btp_id, reset_player);
+			}
+		}
+	}
+	return Array.from(players_by_btp_id.values());
+}
+
+function clear_player_pause_fields_in_match(match) {
+	let changed = false;
+	for (const team of match?.setup?.teams || []) {
+		for (const player of team?.players || []) {
+			if (!player) {
+				continue;
+			}
+			for (const field of [
+				'last_time_on_court_ts',
+				'tablet_last_time_on_court_ts',
+				'tablet_break_until_ts',
+			]) {
+				if (player[field] !== undefined) {
+					delete player[field];
+					changed = true;
+				}
+			}
+			if (player.tablet_break_active !== undefined && player.tablet_break_active !== false) {
+				player.tablet_break_active = false;
+				changed = true;
+			}
+		}
+	}
+	return changed;
+}
+
+async function reset_player_pause_times(app, tournament_key) {
+	const tournament = await app.db.tournaments.findOne_async({ key: tournament_key });
+	if (!tournament) {
+		throw new Error('No tournament ' + tournament_key);
+	}
+	if (!tournament.btp_enabled) {
+		throw new Error('BTP-Anbindung ist nicht aktiviert. Pausenzeiten können nicht sicher in BTP zurückgesetzt werden.');
+	}
+	if (tournament.btp_readonly) {
+		throw new Error('BTP ist im Nur-Lesen-Modus. Pausenzeiten können nicht in BTP zurückgesetzt werden.');
+	}
+
+	const matches = await app.db.matches.find_async({ tournament_key });
+	const players_to_update = collect_players_for_pause_reset(matches);
+	if (players_to_update.length > 0) {
+		const btp_update_queued = btp_manager.update_players(app, tournament_key, players_to_update);
+		if (!btp_update_queued) {
+			throw new Error('BTP-Verbindung ist nicht bereit. Bitte BTP verbinden und erneut versuchen.');
+		}
+	}
+
+	let changed_matches = 0;
+	for (const match of matches) {
+		if (!clear_player_pause_fields_in_match(match)) {
+			continue;
+		}
+		changed_matches++;
+		await app.db.matches.update_async(
+			{ _id: match._id, tournament_key },
+			{ $set: { setup: match.setup } },
+			{},
+		);
+	}
+
+	return {
+		tournament_key,
+		reset_ts: now_ms(app),
+		player_count: players_to_update.length,
+		changed_matches,
+	};
+}
+
+async function handle_player_pause_reset(app, ws, msg) {
+	if (!_require_msg(ws, msg, ['tournament_key'])) {
+		return;
+	}
+
+	try {
+		const result = await reset_player_pause_times(app, msg.tournament_key);
+		notify_change(app, msg.tournament_key, 'player_pause_reset', result);
+		return ws.respond(msg, null, result);
+	} catch (err) {
+		return ws.respond(msg, err);
+	}
+}
+
 function _extract_setup(msg_setup) {
 	const setup = utils.pluck(msg_setup, [
 		'court_id',
@@ -3736,6 +3842,7 @@ module.exports = {
 	handle_clock_set,
 	handle_create_tournament,
 	handle_tournament_reset,
+	handle_player_pause_reset,
 	handle_courts_add,
 	handle_court_edit,
 	handle_location_changed,

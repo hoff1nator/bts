@@ -465,6 +465,13 @@ function default_handler(rerender, special_funcs) {
 				rerender();
 			}
 			break;
+		case 'player_pause_reset':
+			if (ctournament && typeof ctournament.refresh_current_view === 'function') {
+				ctournament.refresh_current_view();
+			} else {
+				rerender();
+			}
+			break;
 		case 'normalization_add':
 			ctournament.add_normalization(c);
 			break;
