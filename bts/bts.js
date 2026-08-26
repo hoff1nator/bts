@@ -106,6 +106,8 @@ function create_app(config, db) {
 	app.get('/h/:tournament_key/logo/:logo_id', http_api.logo_handler);
 	app.get('/h/preview/display/:variant.json', http_api.display_preview_handler);
 	app.get('/h/:tournament_key/rotating-display', http_api.rotating_display_handler);
+	app.get('/h/:tournament_key/matches', http_api.matches_handler);
+	app.get('/h/:tournament_key/court-overview', http_api.court_overview_handler);
 
 	var server = null;
 	if (config.enable_https) {

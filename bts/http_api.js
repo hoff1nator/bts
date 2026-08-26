@@ -4,6 +4,7 @@ const assert = require('assert');
 const path = require('path');
 const utils = require('./utils');
 const bupws = require('./bupws');
+const bupws_v2 = require('./bupws_v2');
 const calc = require('../static/bup/dev/js/calc.js');
 
 const DISPLAY_PREVIEW_SETUP = Object.freeze({
@@ -237,7 +238,7 @@ function matchinfo_handler(req, res) {
 		const [tournament] = tournaments;
 		const [match] = matches;
 		const event = bupws.create_event_representation(tournament);
-		const match_repr = bupws.create_match_representation(app, tournament, match);
+		const match_repr = bupws.create_match_representation(req.app, tournament, match);
 		if (match_repr.presses_json) {
 			// Parse JSON-in-JSON (for performance reasons) for nicer output
 			match_repr.presses = JSON.parse(match_repr.presses_json);
@@ -262,6 +263,490 @@ function display_preview_handler(req, res) {
 	res.setHeader('Pragma', 'no-cache');
 	res.setHeader('Expires', '0');
 	res.send(JSON.stringify(reply, null, 2));
+}
+
+
+function matches_handler(req, res) {
+	const tournament_key = req.params.tournament_key;
+	const now = Date.now();
+	const show_still = now - 60000;
+	const query = {
+		tournament_key,
+		$or: [
+			{$and: [{team1_won: {$ne: true}}, {team1_won: {$ne: false}}]},
+			{end_ts: {$gt: show_still}},
+		],
+	};
+	if (req.query.court && typeof req.query.court === 'string') {
+		query['setup.court_id'] = req.query.court;
+	} else {
+		query['setup.court_id'] = {$exists: true};
+	}
+
+	req.app.db.fetch_all([{
+		queryFunc: '_findOne',
+		collection: 'tournaments',
+		query: {key: tournament_key},
+	}, {
+		collection: 'matches',
+		query,
+	}, {
+		collection: 'courts',
+		query: {tournament_key},
+	}], function(err, tournament, db_matches, db_courts) {
+		if (err) {
+			res.json({status: 'error', message: err.message});
+			return;
+		}
+
+		let matches = db_matches.map(dbm => bupws.create_match_representation(req.app, tournament, dbm));
+		const recently_finished = [];
+		matches = matches.filter(m => {
+			if (!m || !m.setup) return false;
+			if (m.setup.state === 'finished') {
+				if (m.end_ts && m.end_ts > now - 60000) {
+					recently_finished.push(m);
+				}
+				return false;
+			}
+			// The DB query already scoped this to matches with a court_id
+			// assigned, so no further narrowing is needed here.
+			return true;
+		});
+
+		db_courts.sort(utils.cmp_key('num'));
+		const courts = db_courts.map(function(dc) {
+			return {
+				court_id: dc._id,
+				label: dc.name || dc.num,
+				description: dc.name || String(dc.num),
+				match_id: dc.match_id ? ('bts_' + dc.match_id) : undefined,
+			};
+		});
+
+		const event = bupws.create_event_representation(tournament);
+		event.matches = matches;
+		event.courts = courts;
+		event.battery_by_court = bupws_v2.get_battery_by_court();
+		event.recently_finished = recently_finished;
+
+		res.json({status: 'ok', event});
+	});
+}
+
+function court_overview_handler(req, res) {
+	const tournament_key = req.params.tournament_key;
+	req.app.db.tournaments.findOne({key: tournament_key}, function(err, tournament) {
+		_court_overview_render(res, tournament_key, tournament || {});
+	});
+}
+
+function _court_overview_render(res, tournament_key, tournament) {
+	const lang = tournament.language || 'de';
+	const court_free_sound = tournament.court_free_sound || '';
+	const html = `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Court Overview</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html {
+	--font-lg: 22px;
+	--font-md: 16px;
+	--font-sm: 14px;
+}
+html, body { height: 100%; }
+body {
+	background: #111;
+	color: #eee;
+	font-family: sans-serif;
+	padding: 2vmin;
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+}
+h1 { font-size: 3vmin; margin-bottom: 1.5vmin; color: #ccc; flex-shrink: 0; }
+#courts {
+	flex: 1 1 0;
+	display: grid;
+	gap: 2vmin;
+	min-height: 0;
+}
+.court-card {
+	border-radius: 1.5vmin;
+	padding: 2vmin;
+	display: flex;
+	flex-direction: column;
+	transition: background 0.4s, border-color 0.4s;
+	border: 3px solid transparent;
+	overflow: hidden;
+	min-height: 0;
+}
+.court-card.status-red    { background: #2d0a0a; border-color: #c62828; }
+.court-card.status-purple { background: #1e0a2e; border-color: #7b1fa2; }
+.court-card.status-green  { background: #0d2818; border-color: #2e7d32; }
+.court-name { font-size: var(--font-lg); font-weight: bold; margin-bottom: 0.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.court-status { font-size: var(--font-sm); color: #aaa; margin-bottom: 0.2em; }
+.court-players { font-size: var(--font-md); color: #ddd; line-height: 1.3; overflow: hidden; }
+.court-players-vs { font-size: var(--font-sm); color: #888; line-height: 1.2; }
+.court-timer { font-size: var(--font-sm); color: #4caf50; }
+.court-event { font-size: var(--font-sm); color: #bbb; margin-bottom: 0.2em; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-dot {
+	display: inline-block;
+	width: 1.2vmin; height: 1.2vmin;
+	min-width: 8px; min-height: 8px;
+	border-radius: 50%;
+	margin-right: 0.8vmin;
+	vertical-align: middle;
+}
+.status-red .status-dot    { background: #c62828; }
+.status-purple .status-dot { background: #7b1fa2; }
+.status-green .status-dot  { background: #2e7d32; }
+.court-link { text-decoration: none; color: inherit; display: flex; flex-direction: column; flex: 1; min-height: 0; justify-content: space-between; }
+.court-card { cursor: pointer; }
+.court-timer-row { display: flex; justify-content: space-between; align-items: center; margin-top: 0.2em; }
+.court-battery { font-size: var(--font-sm); color: #888; margin-left: auto; text-align: right; }
+.court-battery.bat-low { color: #f44336; }
+.court-battery.bat-mid { color: #f9a825; }
+.court-result { font-size: var(--font-md); color: #e57373; font-weight: bold; margin-top: 0.2em; }
+#last-update { font-size: 1.5vmin; color: #555; margin-top: 1vmin; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<h1>Court Overview</h1>
+<div id="courts"></div>
+<div id="last-update"></div>
+<script>
+var TOURNAMENT_KEY = ${JSON.stringify(tournament_key)};
+var POLL_INTERVAL = 30000;
+var _STRINGS = (${JSON.stringify(lang)} === 'de') ? {
+	title: 'Feldübersicht',
+	no_game: 'Kein Spiel',
+	not_called: 'Noch nicht aufgerufen',
+	oncourt: 'Auf dem Feld',
+	last_update: 'Letztes Update: ',
+} : {
+	title: 'Court Overview',
+	no_game: 'No game',
+	not_called: 'Not called yet',
+	oncourt: 'On court',
+	last_update: 'Last update: ',
+};
+document.title = _STRINGS.title;
+document.querySelector('h1').textContent = _STRINGS.title;
+
+function players_str(setup, team_idx) {
+	var team = setup.teams && setup.teams[team_idx];
+	if (!team || !team.players || team.players.length === 0) return 'N.N.';
+	if (setup.is_doubles && team.players.length > 1) {
+		return team.players[0].name + ' / ' + team.players[1].name;
+	}
+	return team.players[0].name;
+}
+
+function set_players_el(el, setup) {
+	el.innerHTML = '';
+	var t0 = document.createElement('div');
+	t0.textContent = players_str(setup, 0);
+	var vs = document.createElement('div');
+	vs.className = 'court-players-vs';
+	vs.textContent = 'vs.';
+	var t1 = document.createElement('div');
+	t1.textContent = players_str(setup, 1);
+	el.appendChild(t0);
+	el.appendChild(vs);
+	el.appendChild(t1);
+}
+
+function format_duration(ms) {
+	var s = Math.floor(ms / 1000);
+	var m = Math.floor(s / 60);
+	s = s % 60;
+	return m + 'min ' + (s < 10 ? '0' : '') + s + 's';
+}
+
+function format_score(network_score) {
+	if (!network_score || network_score.length === 0) return '';
+	return network_score.map(function(g) { return g[0] + '–' + g[1]; }).join('  ');
+}
+
+// NOTE: this is a reduced-scope port. HEAD's version also had a
+// second-call/final-call/teams-present state machine driven by the
+// courts-to-call feature, which v2 doesn't have yet — re-enable those
+// states here once that lands (they only need the existing preserved
+// setup fields, no rebuild of this handler).
+function render(courts, matches, battery_by_court) {
+	var container = document.getElementById('courts');
+
+	var by_court = {};
+	for (var i = 0; i < matches.length; i++) {
+		var m = matches[i];
+		var cid = m.setup && m.setup.court_id;
+		if (cid && !by_court[cid]) by_court[cid] = m;
+	}
+
+	container.innerHTML = '';
+	for (var i = 0; i < courts.length; i++) {
+		var court = courts[i];
+		var match = by_court[court.court_id];
+
+		var card = document.createElement('div');
+		card.className = 'court-card';
+
+		var link = document.createElement('a');
+		link.className = 'court-link';
+		var court_num = (court.court_id || '').replace(/^.*_/, '');
+		link.href = '/r' + court_num;
+		link.target = '_blank';
+
+		var name_el = document.createElement('div');
+		name_el.className = 'court-name';
+		var dot = document.createElement('span');
+		dot.className = 'status-dot';
+		name_el.appendChild(dot);
+		name_el.appendChild(document.createTextNode(court.label || court.court_id));
+
+		var status_el = document.createElement('div');
+		status_el.className = 'court-status';
+		var players_el = document.createElement('div');
+		players_el.className = 'court-players';
+		var timer_el = document.createElement('div');
+		timer_el.className = 'court-timer';
+		timer_el.dataset.courtId = court.court_id;
+		var event_el = document.createElement('div');
+		event_el.className = 'court-event';
+
+		if (!match) {
+			card.classList.add('status-red');
+			var finished = _last_finished[court.court_id];
+			if (finished) {
+				status_el.textContent = _STRINGS.no_game;
+				set_players_el(players_el, finished.setup);
+				var score_str = format_score(finished.network_score);
+				if (score_str) {
+					var result_el = document.createElement('div');
+					result_el.className = 'court-result';
+					result_el.textContent = score_str;
+					players_el.appendChild(result_el);
+				}
+				var event_text = finished.setup.event_name || '';
+				if (finished.setup.match_name) event_text += (event_text ? ' – ' : '') + finished.setup.match_name;
+				event_el.textContent = event_text;
+			} else {
+				status_el.textContent = _STRINGS.no_game;
+			}
+		} else if (!match.setup.now_on_court) {
+			card.classList.add('status-purple');
+			status_el.textContent = _STRINGS.not_called;
+			set_players_el(players_el, match.setup);
+			var event_text = match.setup.event_name || '';
+			if (match.setup.match_name) event_text += (event_text ? ' – ' : '') + match.setup.match_name;
+			event_el.textContent = event_text;
+		} else {
+			card.classList.add('status-green');
+			status_el.textContent = _STRINGS.oncourt;
+			set_players_el(players_el, match.setup);
+			if (match.setup.called_timestamp) {
+				timer_el.textContent = format_duration(Date.now() - match.setup.called_timestamp);
+				timer_el.dataset.since = match.setup.called_timestamp;
+			}
+			var event_text = match.setup.event_name || '';
+			if (match.setup.match_name) event_text += (event_text ? ' – ' : '') + match.setup.match_name;
+			event_el.textContent = event_text;
+		}
+
+		var bat_el = document.createElement('div');
+		bat_el.className = 'court-battery';
+		var bat = battery_by_court && battery_by_court[court.court_id];
+		if (bat && typeof bat.level === 'number') {
+			var pct = Math.round(bat.level * 100);
+			var icon = bat.charging ? '⚡' : '🔋';
+			bat_el.textContent = icon + ' ' + pct + '%';
+			if (pct <= 15) bat_el.classList.add('bat-low');
+			else if (pct <= 30) bat_el.classList.add('bat-mid');
+		}
+
+		link.appendChild(name_el);
+		if (event_el.textContent) link.appendChild(event_el);
+		link.appendChild(status_el);
+		link.appendChild(players_el);
+		if (timer_el.textContent || bat_el.textContent) {
+			var bottom_row = document.createElement('div');
+			bottom_row.className = 'court-timer-row';
+			if (timer_el.textContent) bottom_row.appendChild(timer_el);
+			if (bat_el.textContent) bottom_row.appendChild(bat_el);
+			link.appendChild(bottom_row);
+		}
+		card.appendChild(link);
+		container.appendChild(card);
+	}
+	document.getElementById('last-update').textContent = _STRINGS.last_update + new Date().toLocaleTimeString();
+}
+
+var _last_courts = [];
+var _last_matches = [];
+var _last_battery = {};
+var _last_court_count = -1;
+
+var COURT_FREE_SOUND = ${JSON.stringify(court_free_sound)};
+var _sound_files = {
+	old_spice: '/static/audio/old_spice.mp3',
+	roadrunner: '/static/audio/roadrunner.mp3',
+};
+var _prev_occupied_courts = null;
+var _last_finished = {};
+var _notification_audio = null;
+var _audio_unlocked = false;
+
+if (COURT_FREE_SOUND && _sound_files[COURT_FREE_SOUND]) {
+	_notification_audio = new Audio(_sound_files[COURT_FREE_SOUND]);
+	_notification_audio.preload = 'auto';
+	function _unlock_audio() {
+		if (_audio_unlocked) return;
+		_notification_audio.volume = 0;
+		_notification_audio.play().then(function() {
+			_notification_audio.pause();
+			_notification_audio.currentTime = 0;
+			_notification_audio.volume = 1;
+			_audio_unlocked = true;
+		}).catch(function() {});
+	}
+	document.addEventListener('click', _unlock_audio, {once: false});
+	document.addEventListener('touchstart', _unlock_audio, {once: false});
+}
+
+function _play_court_free_sound() {
+	if (!COURT_FREE_SOUND || !_notification_audio) return;
+	try {
+		_notification_audio.currentTime = 0;
+		_notification_audio.volume = 1;
+		_notification_audio.play().catch(function() {});
+	} catch(e) {}
+}
+
+function _check_court_freed(courts, matches, recently_finished) {
+	var by_court = {};
+	for (var i = 0; i < matches.length; i++) {
+		var m = matches[i];
+		if (m.setup && m.setup.court_id) by_court[m.setup.court_id] = true;
+	}
+	for (var i = 0; i < recently_finished.length; i++) {
+		var rf = recently_finished[i];
+		if (rf.setup && rf.setup.court_id && !_last_finished[rf.setup.court_id]) {
+			_last_finished[rf.setup.court_id] = rf;
+		}
+	}
+	var occupied = {};
+	for (var i = 0; i < courts.length; i++) {
+		var cid = courts[i].court_id;
+		if (by_court[cid]) occupied[cid] = true;
+	}
+	if (_prev_occupied_courts !== null) {
+		var freed = false;
+		for (var cid in _prev_occupied_courts) {
+			if (_prev_occupied_courts[cid] && !occupied[cid]) {
+				freed = true;
+			}
+		}
+		if (freed) _play_court_free_sound();
+	}
+	for (var cid in occupied) {
+		delete _last_finished[cid];
+	}
+	_prev_occupied_courts = occupied;
+}
+
+function update_grid_layout(n) {
+	if (n === 0) return;
+	var grid = document.getElementById('courts');
+	var W = grid.clientWidth, H = grid.clientHeight, gap = 16;
+	var best_cols = 1, best_score = -1;
+	for (var cols = 1; cols <= n; cols++) {
+		var rows = Math.ceil(n / cols);
+		var cell_w = (W - (cols - 1) * gap) / cols;
+		var cell_h = (H - (rows - 1) * gap) / rows;
+		var ratio = cell_w / cell_h;
+		var score = -Math.abs(ratio - 4/3) - (cols * rows - n) * 0.3;
+		if (score > best_score) { best_score = score; best_cols = cols; }
+	}
+	var best_rows = Math.ceil(n / best_cols);
+	grid.style.gridTemplateColumns = 'repeat(' + best_cols + ', 1fr)';
+	grid.style.gridTemplateRows = 'repeat(' + best_rows + ', 1fr)';
+	var cell_w = (W - (best_cols - 1) * gap) / best_cols;
+	var cell_h = (H - (best_rows - 1) * gap) / best_rows;
+	var cell_min = Math.min(cell_w, cell_h);
+	document.documentElement.style.setProperty('--font-lg', Math.min(Math.max(cell_min * 0.13, 11), 28) + 'px');
+	document.documentElement.style.setProperty('--font-md', Math.min(Math.max(cell_min * 0.10, 9), 22) + 'px');
+	document.documentElement.style.setProperty('--font-sm', Math.min(Math.max(cell_min * 0.085, 8), 18) + 'px');
+}
+
+function render_and_store(courts, matches, battery_by_court) {
+	_last_courts = courts;
+	_last_matches = matches;
+	_last_battery = battery_by_court || {};
+	if (courts.length !== _last_court_count) {
+		update_grid_layout(courts.length);
+		_last_court_count = courts.length;
+	}
+	render(courts, matches, _last_battery);
+}
+
+window.addEventListener('resize', function() { update_grid_layout(_last_courts.length); });
+
+function poll() {
+	var xhr = new XMLHttpRequest();
+	xhr.open('GET', '/h/' + encodeURIComponent(TOURNAMENT_KEY) + '/matches');
+	xhr.onload = function() {
+		if (xhr.status !== 200) return;
+		try {
+			var data = JSON.parse(xhr.responseText);
+			if (data.status !== 'ok') return;
+			var courts = (data.event && data.event.courts) || [];
+			var matches = (data.event && data.event.matches) || [];
+			var battery_by_court = (data.event && data.event.battery_by_court) || {};
+			var recently_finished = (data.event && data.event.recently_finished) || [];
+			_check_court_freed(courts, matches, recently_finished);
+			render_and_store(courts, matches, battery_by_court);
+		} catch(e) {}
+	};
+	xhr.send();
+}
+
+poll();
+setInterval(poll, POLL_INTERVAL);
+setInterval(function() {
+	var now = Date.now();
+	document.querySelectorAll('.court-timer[data-since]').forEach(function(el) {
+		var since = parseInt(el.dataset.since, 10);
+		if (since) el.textContent = format_duration(now - since);
+	});
+}, 1000);
+
+var _ws_refresh_types = {
+	match_edit:1, score:1, match_called_on_court:1,
+	court_current_match:1, update_player_status:1, match_preparation_call:1
+};
+function ws_connect() {
+	var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+	var sock = new WebSocket(proto + '//' + location.host + '/ws/admin');
+	sock.onmessage = function(ev) {
+		try {
+			var msg = JSON.parse(ev.data);
+			if (msg.type === 'change' && _ws_refresh_types[msg.ctype]) poll();
+		} catch(e) {}
+	};
+	sock.onclose = function() { setTimeout(ws_connect, 3000); };
+	sock.onerror = function() { sock.close(); };
+}
+ws_connect();
+</script>
+</body>
+</html>`;
+	res.setHeader('Content-Type', 'text/html; charset=utf-8');
+	res.setHeader('Cache-Control', 'no-cache');
+	res.send(html);
 }
 
 
@@ -343,4 +828,6 @@ module.exports = {
 	matchinfo_handler,
 	display_preview_handler,
 	rotating_display_handler,
+	matches_handler,
+	court_overview_handler,
 };

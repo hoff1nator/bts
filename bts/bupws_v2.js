@@ -3152,6 +3152,16 @@ async function add_display_status(app, tournament, displays) {
 	}
 }
 
+function get_battery_by_court() {
+	const result = {};
+	for (const panel_ws of all_panels) {
+		if (panel_ws.court_id && panel_ws.battery) {
+			result[panel_ws.court_id] = panel_ws.battery;
+		}
+	}
+	return result;
+}
+
 module.exports = {
 	on_connect,
 	on_close,
@@ -3180,4 +3190,5 @@ module.exports = {
 	is_multi_court_display_style,
 	is_fieldless_multi_court_display_style,
 	MULTI_COURT_ASSIGNMENT_ID,
+	get_battery_by_court,
 };
