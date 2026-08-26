@@ -265,8 +265,82 @@ function display_preview_handler(req, res) {
 }
 
 
+function rotating_display_handler(req, res) {
+	const tournament_key = req.params.tournament_key;
+	const interval = parseInt(req.query.interval, 10) || 20;
+	const style = req.query.style || 'ostbek1';
+	const pages_param = req.query.pages;
+
+	var default_pages = [
+		'/admin/t/' + encodeURIComponent(tournament_key) + '/upcoming',
+		'/bupdev/#btsh_e=' + encodeURIComponent(tournament_key) + '&display&dm_style=' + encodeURIComponent(style),
+	];
+
+	var pages = default_pages;
+	if (pages_param) {
+		try {
+			pages = JSON.parse(pages_param);
+		} catch (e) {
+			pages = default_pages;
+		}
+	}
+
+	const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Rotating Display</title>
+<style>
+* { margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+iframe { width: 100%; height: 100%; border: none; position: absolute; top: 0; left: 0; }
+iframe.hidden { opacity: 0; pointer-events: none; }
+iframe.visible { opacity: 1; }
+</style>
+</head>
+<body>
+<iframe id="frame-a" class="visible"></iframe>
+<iframe id="frame-b" class="hidden"></iframe>
+<script>
+var PAGES = ${JSON.stringify(pages)};
+var INTERVAL = ${interval} * 1000;
+var current = 0;
+var frameA = document.getElementById('frame-a');
+var frameB = document.getElementById('frame-b');
+var activeFrame = frameA;
+var backFrame = frameB;
+
+frameA.src = PAGES[0];
+
+setInterval(function() {
+	current = (current + 1) % PAGES.length;
+	var url = PAGES[current];
+	if (url.indexOf('#') < 0) {
+		var bust = '_t=' + Date.now();
+		url += (url.indexOf('?') >= 0 ? '&' : '?') + bust;
+	}
+	backFrame.src = 'about:blank';
+	setTimeout(function() {
+		backFrame.src = url;
+		backFrame.onload = function() {
+			activeFrame.className = 'hidden';
+			backFrame.className = 'visible';
+			var tmp = activeFrame;
+			activeFrame = backFrame;
+			backFrame = tmp;
+		};
+	}, 50);
+}, INTERVAL);
+</script>
+</body></html>`;
+	res.setHeader('Content-Type', 'text/html; charset=utf-8');
+	res.setHeader('Cache-Control', 'no-cache');
+	res.send(html);
+}
+
+
 module.exports = {
 	logo_handler,
 	matchinfo_handler,
 	display_preview_handler,
+	rotating_display_handler,
 };

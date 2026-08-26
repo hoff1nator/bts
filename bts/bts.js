@@ -91,7 +91,7 @@ function create_app(config, db) {
 	app.config = config;
 	app.db = db;
 	app.use('/bup/', express.static(config.bup_location, {index: config.bup_index}));
-	app.use('/bupdev/', express.static(path.join(utils.root_dir(), 'static/bup/dev/')));
+	app.use('/bupdev/', express.static(path.join(utils.root_dir(), 'static/bup/dev/'), {index: 'bup.html'}));
 	app.use('/static/', express.static('static/', {}));
 	app.use('/admin/', cadmin_router());
 	app.get('/', function(req, res) {
@@ -105,6 +105,7 @@ function create_app(config, db) {
 	app.get('/h/:tournament_key/m/:match_id/info', http_api.matchinfo_handler);
 	app.get('/h/:tournament_key/logo/:logo_id', http_api.logo_handler);
 	app.get('/h/preview/display/:variant.json', http_api.display_preview_handler);
+	app.get('/h/:tournament_key/rotating-display', http_api.rotating_display_handler);
 
 	var server = null;
 	if (config.enable_https) {
