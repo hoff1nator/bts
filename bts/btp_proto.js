@@ -96,7 +96,7 @@ function update_request(match, key_unicode, password, umpire_btp_id, service_jud
 			PlanningID: btp_m_id.planning,
 			Status: 0,
 			Highlight: (match.setup.highlight ? match.setup.highlight : 0),
-			MatchOrder: match.match_order,
+			// MatchOrder: match.match_order, // sending this clobbers BTP's own drag-and-drop match order
 			// BTP also sends a boolean ScoreSheetPrinted here
 		};
 

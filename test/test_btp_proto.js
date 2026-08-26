@@ -65,4 +65,21 @@ _describe('btp_proto update_request', () => {
 		const player_ids = req.Update.Tournament.Players.map((entry) => entry.Player.ID);
 		assert.deepStrictEqual(player_ids, [11, 22]);
 	});
+
+	_it('does not send MatchOrder back to BTP, to avoid clobbering its own drag-and-drop order', () => {
+		const req = btp_proto.update_request({
+			btp_match_ids: [{ id: 1, draw: 2, planning: 3 }],
+			match_order: 7,
+			setup: {
+				highlight: 0,
+				teams: [
+					{ players: [{ checked_in: true }] },
+					{ players: [{ checked_in: true }] },
+				],
+			},
+		}, 'unicode', null, null, null, null, {});
+
+		const match = req.Update.Tournament.Matches[0].Match;
+		assert.strictEqual('MatchOrder' in match, false);
+	});
 });
