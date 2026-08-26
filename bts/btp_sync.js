@@ -590,6 +590,15 @@ function mergeLocalMatchIntoBtpMatch(current_match, match) {
 		match.setup.called_timestamp = current_match.setup.called_timestamp;
 	}
 
+	// Preserve calling/presence fields only if match is still on court
+	if (match.setup.now_on_court) {
+		for (const k of ['called_to_court', 'called_to_court_at', 'second_call_at', 'final_call_at', 'teams_present', 'team1_present', 'team2_present']) {
+			if (current_match.setup[k] !== undefined) {
+				match.setup[k] = current_match.setup[k];
+			}
+		}
+	}
+
 	const local_preparation_active =
 		current_match.setup &&
 		current_match.setup.state === 'preparation' &&

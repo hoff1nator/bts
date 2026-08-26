@@ -341,6 +341,69 @@ _describe('btp_sync', () => {
 		assert.strictEqual(merged.setup.court_id, 'court_7');
 	});
 
+	_it('preserves call-escalation and presence fields while the match stays on court', () => {
+		const currentMatch = {
+			setup: {
+				now_on_court: true,
+				called_to_court: true,
+				called_to_court_at: 1000,
+				second_call_at: 2000,
+				final_call_at: 3000,
+				teams_present: true,
+				team1_present: true,
+				team2_present: true,
+				teams: [{ players: [] }, { players: [] }],
+			},
+		};
+		const btpMatch = {
+			setup: {
+				now_on_court: true,
+				state: 'scheduled',
+				teams: [{ players: [] }, { players: [] }],
+			},
+		};
+
+		const merged = btp_sync._merge_local_match_into_btp_match(currentMatch, structuredClone(btpMatch));
+
+		assert.strictEqual(merged.setup.called_to_court, true);
+		assert.strictEqual(merged.setup.called_to_court_at, 1000);
+		assert.strictEqual(merged.setup.second_call_at, 2000);
+		assert.strictEqual(merged.setup.final_call_at, 3000);
+		assert.strictEqual(merged.setup.teams_present, true);
+		assert.strictEqual(merged.setup.team1_present, true);
+		assert.strictEqual(merged.setup.team2_present, true);
+	});
+
+	_it('does not preserve call-escalation and presence fields once the match is off court', () => {
+		const currentMatch = {
+			setup: {
+				now_on_court: false,
+				called_to_court: true,
+				called_to_court_at: 1000,
+				second_call_at: 2000,
+				final_call_at: 3000,
+				teams_present: true,
+				team1_present: true,
+				team2_present: true,
+				teams: [{ players: [] }, { players: [] }],
+			},
+		};
+		const btpMatch = {
+			setup: {
+				now_on_court: false,
+				state: 'scheduled',
+				teams: [{ players: [] }, { players: [] }],
+			},
+		};
+
+		const merged = btp_sync._merge_local_match_into_btp_match(currentMatch, structuredClone(btpMatch));
+
+		assert.strictEqual(merged.setup.called_to_court, undefined);
+		assert.strictEqual(merged.setup.second_call_at, undefined);
+		assert.strictEqual(merged.setup.final_call_at, undefined);
+		assert.strictEqual(merged.setup.teams_present, undefined);
+	});
+
 	_it('parses BTP court numbers from localized court names', () => {
 		assert.strictEqual(btp_sync._parse_btp_court_num({ ID: [2], Name: ['Feld 1'] }), 1);
 		assert.strictEqual(btp_sync._parse_btp_court_num({ ID: [12], Name: ['Court 7'] }), 7);
