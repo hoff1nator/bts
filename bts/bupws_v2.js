@@ -2940,6 +2940,61 @@ async function handle_score_update(app, ws, msg) {
 	})));
 }
 
+// Client sends this from the kiosk pre-step (see bup/js/kiosk.js) when a
+// team taps "present" before result entry. match_id is the raw match _id
+// (client already strips the bts_ prefix, same convention as score-update).
+async function async_handle_presence_update(app, ws, msg) {
+	const tournament_key = msg.tournament_key || ws.last_tournament_key || default_tournament_key;
+	const match_id = msg.match_id;
+	if (!match_id) {
+		return;
+	}
+	const match_utils = require('./match_utils');
+	let match;
+	try {
+		match = await match_utils.fetch_match(app, tournament_key, match_id);
+	} catch (e) {
+		send_error(ws, tournament_key, 'Match not found for presence update.');
+		return;
+	}
+	if (!match.setup || !match.setup.now_on_court) {
+		send_error(ws, tournament_key, 'Match is not on court.');
+		return;
+	}
+	if (ws.court_id && match.setup.court_id && ws.court_id !== match.setup.court_id) {
+		send_error(ws, tournament_key, 'Presence update rejected: panel is assigned to a different court.');
+		return;
+	}
+
+	const update = {};
+	if (msg.team1_present) {
+		update['setup.team1_present'] = true;
+	}
+	if (msg.team2_present) {
+		update['setup.team2_present'] = true;
+	}
+	if (Object.keys(update).length === 0) {
+		return;
+	}
+	const team1_present = ('setup.team1_present' in update) || !!match.setup.team1_present;
+	const team2_present = ('setup.team2_present' in update) || !!match.setup.team2_present;
+	if (team1_present && team2_present) {
+		update['setup.teams_present'] = true;
+	}
+
+	await new Promise((resolve, reject) => {
+		app.db.matches.update({ _id: match._id, tournament_key }, { $set: update }, {}, (err) => {
+			if (err) {
+				return reject(err);
+			}
+			resolve();
+		});
+	});
+
+	admin.notify_change(app, tournament_key, 'match_edit', { match__id: match._id, match_id: match._id });
+	await handle_score_change(app, tournament_key, match.setup.court_id, {});
+}
+
 async function handle_score_change(app, tournament_key, court_id, options = {}) {
 	const matching_panels = all_panels.filter((ws) => ws && ws.last_tournament_key === tournament_key);
 	const tournament = await find_one_async(app.db.tournaments, { key: tournament_key });
@@ -3173,6 +3228,7 @@ module.exports = {
 	handle_persist_display_settings,
 	handle_reset_display_settings,
 	handle_score_update,
+	async_handle_presence_update,
 	async_handle_select_court_assignment,
 	send_current_state,
 	refresh_client,
