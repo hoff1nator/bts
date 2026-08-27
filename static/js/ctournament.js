@@ -3176,6 +3176,37 @@ var ctournament = (function() {
 			render_displaysettings(devices_div);
 		}
 
+		// calling-div##################################################################################
+		{
+			const calling_div = uiu.el(form, 'div', 'settings');
+			uiu.el(calling_div, 'h2', 'edit', ci18n('tournament:edit:calling:legend'));
+
+			input.courts_to_call_enabled = create_checkbox(curt, calling_div, 'courts_to_call_enabled');
+			input.second_call_enabled = create_checkbox(curt, calling_div, 'second_call_enabled');
+
+			if (!curt.second_call_s) {
+				curt.second_call_s = 420;
+			}
+			input.second_call_s = create_input(curt, 'number', calling_div, 'second_call_s');
+
+			input.final_call_enabled = create_checkbox(curt, calling_div, 'final_call_enabled');
+
+			if (!curt.final_call_s) {
+				curt.final_call_s = 300;
+			}
+			input.final_call_s = create_input(curt, 'number', calling_div, 'final_call_s');
+
+			const sound_label = uiu.el(calling_div, 'label');
+			uiu.el(sound_label, 'span', {}, ci18n('tournament:edit:calling:court_free_sound'));
+			const sound_select = uiu.el(sound_label, 'select', {name: 'court_free_sound'});
+			uiu.el(sound_select, 'option', {value: ''}, ci18n('tournament:edit:calling:court_free_sound:none'));
+			uiu.el(sound_select, 'option', {value: 'old_spice'}, 'Old Spice');
+			uiu.el(sound_select, 'option', {value: 'roadrunner'}, 'Roadrunner');
+			sound_select.value = curt.court_free_sound || '';
+			bind_live_prop(sound_select, 'court_free_sound');
+			input.court_free_sound = sound_select;
+		}
+
 		// debug-div##################################################################################
 		{
 			const debug_div = uiu.el(form, 'div', 'settings');

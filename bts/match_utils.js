@@ -11,6 +11,7 @@ const pending_technical_official_pause_runs = new Map();
 const pending_player_court_reconciliation_runs = new Map();
 let technical_official_pause_interval = null;
 let player_court_reconciliation_interval = null;
+let call_escalation_interval = null;
 
 function now_ms(app) {
 	return app?.clock ? app.clock.now_ms() : Date.now();
@@ -421,6 +422,11 @@ function add_called_timestamp(app, match, callback) {
 	const setup = match.setup;
 	const called_timestamp = now_ms(app);
 	setup.called_timestamp = called_timestamp;
+	// Mirrors called_timestamp for the call-escalation feature (see
+	// start_call_escalation_manager), which reminds officials when a
+	// match has sat on court too long without a result.
+	setup.called_to_court = true;
+	setup.called_to_court_at = called_timestamp;
 	setup.state = 'oncourt';
 	remove_preparation_call_timestamp(setup);
 	return callback(null);
@@ -429,6 +435,13 @@ function add_called_timestamp(app, match, callback) {
 function remove_called_timestamp(match, callback) {
 	const setup = match.setup;
 	setup.called_timestamp = undefined;
+	setup.called_to_court = undefined;
+	setup.called_to_court_at = undefined;
+	setup.second_call_at = undefined;
+	setup.final_call_at = undefined;
+	setup.teams_present = undefined;
+	setup.team1_present = undefined;
+	setup.team2_present = undefined;
 	setup.state = 'scheduled';
 	return callback(null);
 }
@@ -2200,6 +2213,69 @@ function start_technical_official_pause_manager(app) {
 	}, 1000);
 }
 
+function escalate_call_levels_for_tournament(app, tournament) {
+	const second_call_enabled = tournament.second_call_enabled !== false;
+	const final_call_enabled = tournament.final_call_enabled !== false;
+	const second_call_ms = (tournament.second_call_s || 420) * 1000;
+	const final_call_ms = (tournament.final_call_s || 300) * 1000;
+	const now = now_ms(app);
+
+	app.db.matches.find({
+		tournament_key: tournament.key,
+		'setup.now_on_court': true,
+		'setup.called_to_court': true,
+	}, (err, matches) => {
+		if (err) {
+			return;
+		}
+		(matches || []).forEach((match) => {
+			const setup = match.setup;
+			// Presence already confirmed (Phase 3.2) — nothing left to escalate.
+			if (setup.teams_present) {
+				return;
+			}
+			let changed = false;
+			if (second_call_enabled && !setup.second_call_at && setup.called_to_court_at) {
+				if (now - setup.called_to_court_at >= second_call_ms) {
+					setup.second_call_at = setup.called_to_court_at + second_call_ms;
+					changed = true;
+				}
+			}
+			if (final_call_enabled && !setup.final_call_at && setup.second_call_at) {
+				if (now - setup.second_call_at >= final_call_ms) {
+					setup.final_call_at = setup.second_call_at + final_call_ms;
+					changed = true;
+				}
+			}
+			if (!changed) {
+				return;
+			}
+			update_match_db(app, match, (updErr) => {
+				if (updErr) {
+					return;
+				}
+				notify_change_match_edit(app, match, () => {});
+			});
+		});
+	});
+}
+
+function start_call_escalation_manager(app) {
+	if (call_escalation_interval || !app || !app.db) {
+		return;
+	}
+	call_escalation_interval = setInterval(() => {
+		app.db.tournaments.find({ courts_to_call_enabled: true }, (err, tournaments) => {
+			if (err) {
+				return;
+			}
+			(tournaments || []).forEach((tournament) => {
+				escalate_call_levels_for_tournament(app, tournament);
+			});
+		});
+	}, 5000);
+}
+
 function call_preparation_match_on_court(app, tournament_key, court_id) {
 	return new Promise((resolve, reject) => {
 		debug_flags.log(app, tournament_key, '[bts] auto_call_trace:call_preparation_match_on_court_start', {
@@ -2596,6 +2672,8 @@ module.exports ={
 	switch_court,
 	match_update,
 	uncall_match,
+	add_called_timestamp,
+	remove_called_timestamp,
 	fetch_match,
 	fetch_tabletoperator,
 	match_completly_initialized,
@@ -2628,6 +2706,8 @@ module.exports ={
 	process_expired_technical_official_breaks_for_tournament,
 	queue_process_expired_technical_official_breaks,
 	start_technical_official_pause_manager,
+	escalate_call_levels_for_tournament,
+	start_call_escalation_manager,
 	auto_call_matches_on_free_courts,
 	call_preparation_match_on_court,
 	call_next_possible_match_for_preparation,

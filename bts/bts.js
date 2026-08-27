@@ -55,6 +55,7 @@ function main() {
 			clock.init(app).then(() => {
 				match_utils.start_technical_official_pause_manager(app);
 				match_utils.start_player_court_reconciliation_manager(app);
+				match_utils.start_call_escalation_manager(app);
 				btp_manager.init(app, (err) => cb(err, app));
 			}).catch(cb);
 		}, function(app, cb) {
