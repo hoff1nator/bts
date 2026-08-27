@@ -37,6 +37,8 @@ const MULTI_COURT_DISPLAY_STYLES = new Set([
 	'top+list',
 	'tournament_overview',
 	'tournament_overview_dm',
+	'ostbek1',
+	'ostbek2',
 ]);
 const FIELDLESS_MULTI_COURT_DISPLAY_STYLES = new Set([
 	'greyish',
