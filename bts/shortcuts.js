@@ -40,7 +40,7 @@ function display_handler(req, res) {
 			bup_params.court = t.key + '_' + req.params.courtnum;
 		}
 
-		const redir_url = '/bup/#' + encode_params({...bup_params, ...req.query});
+		const redir_url = '/bupdev/#' + encode_params({...bup_params, ...req.query});
 
 		res.redirect(redir_url);
 	});
@@ -62,7 +62,7 @@ function umpire_handler(req, res) {
 			bup_params.court = t.key + '_' + req.params.courtnum;
 		}
 
-		const redir_url = '/bup/#' + encode_params({...bup_params, ...req.query});
+		const redir_url = '/bupdev/#' + encode_params({...bup_params, ...req.query});
 		res.redirect(redir_url);
 	});
 }
