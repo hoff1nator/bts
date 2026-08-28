@@ -394,7 +394,6 @@ h1 { font-size: 3vmin; margin-bottom: 1.5vmin; color: #ccc; flex-shrink: 0; }
 }
 .court-card.status-red    { background: #2d0a0a; border-color: #c62828; }
 .court-card.status-purple { background: #1e0a2e; border-color: #7b1fa2; }
-.court-card.status-yellow { background: #2d2200; border-color: #f9a825; }
 .court-card.status-orange { background: #2e1800; border-color: #f57c00; }
 .court-card.status-alert  { background: #2a0020; border-color: #e91e8c; }
 .court-card.status-green  { background: #0d2818; border-color: #2e7d32; }
@@ -417,7 +416,6 @@ h1 { font-size: 3vmin; margin-bottom: 1.5vmin; color: #ccc; flex-shrink: 0; }
 }
 .status-red .status-dot    { background: #c62828; }
 .status-purple .status-dot { background: #7b1fa2; }
-.status-yellow .status-dot { background: #f9a825; }
 .status-orange .status-dot { background: #f57c00; }
 .status-alert .status-dot  { background: #e91e8c; }
 .status-green .status-dot  { background: #2e7d32; }
@@ -443,7 +441,6 @@ var _STRINGS = (${JSON.stringify(lang)} === 'de') ? {
 	no_game: 'Kein Spiel',
 	not_called: 'Noch nicht aufgerufen',
 	oncourt: 'Auf dem Feld',
-	waiting: 'Warte auf Spieler',
 	second_call: '⚠ 2. Aufruf',
 	final_call: '⚠ Letzter Aufruf',
 	present: 'Spieler anwesend',
@@ -453,7 +450,6 @@ var _STRINGS = (${JSON.stringify(lang)} === 'de') ? {
 	no_game: 'No game',
 	not_called: 'Not called yet',
 	oncourt: 'On court',
-	waiting: 'Waiting for players',
 	second_call: '⚠ 2nd Call',
 	final_call: '⚠ Final Call',
 	present: 'Players present',
@@ -540,7 +536,12 @@ function render(courts, matches, call_settings, battery_by_court) {
 		var event_el = document.createElement('div');
 		event_el.className = 'court-event';
 
-		if (!match) {
+		// A court only counts as "active" once its match has actually been
+		// called (now_on_court) - a match that merely has a court_id (e.g.
+		// a stale/pre-assigned record) is treated the same as no match at
+		// all, so this card's color always reflects real calling status,
+		// not court bookkeeping.
+		if (!match || !match.setup.now_on_court) {
 			card.classList.add('status-red');
 			var finished = _last_finished[court.court_id];
 			if (finished) {
@@ -559,14 +560,11 @@ function render(courts, matches, call_settings, battery_by_court) {
 			} else {
 				status_el.textContent = _STRINGS.no_game;
 			}
-		} else if (!match.setup.now_on_court) {
-			card.classList.add('status-purple');
-			status_el.textContent = _STRINGS.not_called;
-			set_players_el(players_el, match.setup);
-			var event_text = match.setup.event_name || '';
-			if (match.setup.match_name) event_text += (event_text ? ' – ' : '') + match.setup.match_name;
-			event_el.textContent = event_text;
 		} else if (call_settings && call_settings.courts_to_call_enabled && !match.setup.teams_present) {
+			// Mirrors courts-to-call's own escalation level derivation
+			// (final_call_at ? 2 : second_call_at ? 1 : 0) - same fields,
+			// same thresholds, so this card always agrees with the
+			// courts-to-call todo list about where a match stands.
 			var status_color, status_text;
 			if (call_settings.final_call_enabled && match.setup.final_call_at) {
 				status_color = 'status-alert';
@@ -575,8 +573,8 @@ function render(courts, matches, call_settings, battery_by_court) {
 				status_color = 'status-orange';
 				status_text = _STRINGS.second_call;
 			} else {
-				status_color = 'status-yellow';
-				status_text = _STRINGS.waiting;
+				status_color = 'status-purple';
+				status_text = _STRINGS.not_called;
 			}
 			card.classList.add(status_color);
 			status_el.textContent = status_text;
