@@ -294,9 +294,20 @@ async function match_update(app, match, old_court, callback) {
 }
 
 async function uncall_match(app, tournament, match, old_court, callback) {
-	// Imports
-
-	// Requrements
+	// The caller (admin.js's handle_match_edit) only guarantees
+	// setup.now_on_court is falsy before calling this - it doesn't
+	// necessarily clear setup.court_id too (e.g. the "Edit match" dialog's
+	// form only ever writes whatever the court dropdown currently shows,
+	// with no way to blank it, so unchecking "on court" alone left the old
+	// court_id in place). A match that keeps its old court_id after being
+	// uncalled still matches every court-scoped query for that court
+	// forever (matches_handler's query has no result yet, so nothing ever
+	// excludes it), so it kept competing with - and sometimes winning
+	// over - whatever match got called there next on court-overview. This
+	// is the authoritative "remove from court" action, so enforce a clean
+	// court_id/now_on_court regardless of what the caller passed in.
+	match.setup.court_id = undefined;
+	match.setup.now_on_court = false;
 
 	async.waterfall([	(wcb) => remove_called_timestamp(match, wcb),
 		(wcb) => remove_tablet_on_court(app, tournament.key, match._id, null, wcb),
