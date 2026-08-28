@@ -1491,6 +1491,14 @@ var ctournament = (function() {
 			href: '/bup/#btsh_e=' + encodeURIComponent(curt.key) + bup_lang,
 		}, {
 			class: 'toprow_menu_separator',
+		}, {
+			label: ci18n('Court Overview'),
+			href: '/h/' + encodeURIComponent(curt.key) + '/court-overview',
+		}, {
+			label: ci18n('Courts to Call'),
+			href: '/h/' + encodeURIComponent(curt.key) + '/courts-to-call',
+		}, {
+			class: 'toprow_menu_separator',
 		},
 		...view_items, {
 			class: 'toprow_menu_separator',

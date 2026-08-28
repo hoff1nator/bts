@@ -18,6 +18,8 @@ var ci18n_de = Object.assign(
 	'Self-Check-In: empty': 'Aktuell sind keine Paarungen in Vorbereitung.',
 	'Scoreboard': 'Anzeigetafel',
 	'Umpire Panel': 'Schiedsrichter-Panel',
+	'Court Overview': 'Feldübersicht',
+	'Courts to Call': 'Feldaufrufe',
 	'Service judge': 'Aufschlagrichter',
 	'Tablet operator': 'Tabletbedienung',
 	'Menu': 'Menü',

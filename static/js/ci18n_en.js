@@ -18,6 +18,8 @@ var ci18n_en = Object.assign(
 	'Self-Check-In: empty': 'There are currently no matches in preparation.',
 	'Scoreboard': 'Scoreboard',
 	'Umpire Panel': 'Umpire Panel',
+	'Court Overview': 'Court Overview',
+	'Courts to Call': 'Courts to Call',
 	'Service judge': 'Service judge',
 	'Tablet operator': 'Tablet operator',
 	'Menu': 'Menu',
