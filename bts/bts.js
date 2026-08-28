@@ -111,7 +111,6 @@ function create_app(config, db) {
 	app.get('/h/:tournament_key/court-overview', http_api.court_overview_handler);
 	app.get('/h/:tournament_key/courts-to-call', http_api.courts_to_call_handler);
 	app.get('/h/:tournament_key/courts-to-call/data', http_api.courts_to_call_data_handler);
-	app.post('/h/:tournament_key/courts-to-call/call', http_api.courts_to_call_call_handler);
 	app.post('/h/:tournament_key/courts-to-call/acknowledge', http_api.courts_to_call_acknowledge_handler);
 
 	var server = null;

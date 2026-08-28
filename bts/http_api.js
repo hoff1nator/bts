@@ -870,171 +870,69 @@ setInterval(function() {
 }
 
 
-// Courts-to-call: a staff-facing kiosk page (no admin login) for calling
-// matches to free courts and re-announcing overdue ones. Fully integrated
-// with v2's own call mechanism: "Call" invokes
-// match_utils.call_next_candidate_on_court(), the same candidate-selection
-// and call_match() waterfall automatic calling uses (officials, BTP sync,
-// etc. all happen the normal way) - this page just lets a human trigger it
-// on demand, which matters when a tournament has
-// call_next_possible_scheduled_match_in_preparation turned off (manual
-// mode) and needs someone to press the button instead.
+// Courts-to-call: a staff-facing kiosk page (no admin login) for the person
+// doing the PA/voice announcements. This is a pure todo list - it never
+// assigns matches to courts or calls anything itself (that's the native BTS
+// admin's job, via drag-and-drop or automatic calling). A match lands on
+// this list the moment it's called to a court (by either of those), staff
+// taps it once they've announced it out loud, and it drops off - exactly
+// like the old version. If nobody taps it in time, the escalation timer
+// (match_utils.start_call_escalation_manager) bumps it to a 2nd-call /
+// final-call reminder, which reappears the same way until acknowledged.
 function courts_to_call_data_handler(req, res) {
 	const tournament_key = req.params.tournament_key;
-	const now = Date.now();
 	req.app.db.fetch_all([{
 		queryFunc: '_findOne',
 		collection: 'tournaments',
 		query: {key: tournament_key},
 	}, {
-		collection: 'courts',
-		query: {tournament_key},
-	}, {
 		collection: 'matches',
 		query: {tournament_key},
-	}, {
-		collection: 'umpires',
-		query: {tournament_key},
-	}], function(err, tournament, courts, matches, umpires) {
+	}], function(err, tournament, matches) {
 		if (err || !tournament) {
 			res.json({status: 'error', message: err ? err.message : 'Tournament not found'});
 			return;
 		}
 
-		const match_automation = require('./match_automation');
-		const match_utils = require('./match_utils');
-		const current_tournament = {...tournament, courts, matches, umpires};
-		const occupied_court_ids = new Set(
-			matches
-				.filter(m => m.setup && m.setup.now_on_court && m.setup.court_id)
-				.map(m => m.setup.court_id)
-		);
-
-		// "Automatic" here means the server itself is already filling free
-		// courts (match_utils.call_preparation_match_on_court, driven off
-		// the same two settings checked below). In that mode a free court
-		// only stays free for a moment between polls, so surfacing our own
-		// suggestions here would just race the automation and, per past
-		// bug reports, call unrelated matches out from under it. Manual
-		// mode is the tournament's explicit opt-out of automatic calling,
-		// and this page is the manual alternative for it - so only offer
-		// picks when automatic calling is actually off.
-		const automatic_mode = match_utils.is_tournament_automation_enabled(tournament)
-			&& !!tournament.call_next_possible_scheduled_match_in_preparation;
-
-		const to_call = [];
-		if (!automatic_mode) {
-			courts
-				.filter(c => c.is_active !== false && !occupied_court_ids.has(c._id))
-				.forEach(court => {
-					const candidates = match_automation.find_call_on_court_candidates(current_tournament, court._id, {now_ts: now});
-					if (candidates && candidates.length > 0) {
-						to_call.push({
-							court: {court_id: court._id, label: court.name || String(court.num)},
-							// Cap the list - it's a picker for staff, not a full schedule dump.
-							candidates: candidates.slice(0, 8).map(m => bupws.create_match_representation(req.app, tournament, m)),
-						});
-					}
-				});
-		}
-
 		const reminders = matches
 			.filter(m => {
 				if (!m.setup || !m.setup.now_on_court || m.setup.teams_present) return false;
-				if (!m.setup.second_call_at && !m.setup.final_call_at) return false;
-				const level = m.setup.final_call_at ? 2 : 1;
-				return !(m.setup.call_reminder_ack_level >= level);
+				const level = m.setup.final_call_at ? 2 : (m.setup.second_call_at ? 1 : 0);
+				// -1 (never acknowledged) rather than 0, so a fresh call at
+				// level 0 still shows up - "acknowledged at level 0" and
+				// "never acknowledged" are different states.
+				const acked = m.setup.call_reminder_ack_level ?? -1;
+				return !(acked >= level);
 			})
 			.map(m => bupws.create_match_representation(req.app, tournament, m));
 
 		const ctc_enabled = !!tournament.courts_to_call_enabled;
 		res.json({
 			status: 'ok',
-			to_call,
 			reminders,
 			call_settings: {
 				courts_to_call_enabled: ctc_enabled,
 				second_call_enabled: ctc_enabled && tournament.second_call_enabled !== false,
 				final_call_enabled: ctc_enabled && tournament.final_call_enabled !== false,
-				automatic_calling_enabled: automatic_mode,
 			},
 		});
 	});
 }
 
-function courts_to_call_call_handler(req, res) {
-	const tournament_key = req.params.tournament_key;
-	const court_id = req.body && req.body.court_id;
-	const match_id = req.body && req.body.match_id;
-	if (!court_id || !match_id) {
-		res.json({status: 'error', message: 'Missing court_id or match_id'});
-		return;
-	}
-	req.app.db.fetch_all([{
-		queryFunc: '_findOne',
-		collection: 'tournaments',
-		query: {key: tournament_key},
-	}, {
-		collection: 'courts',
-		query: {tournament_key},
-	}, {
-		collection: 'matches',
-		query: {tournament_key},
-	}, {
-		collection: 'umpires',
-		query: {tournament_key},
-	}], function(err, tournament, courts, matches, umpires) {
-		if (err || !tournament) {
-			res.json({status: 'error', message: err ? err.message : 'Tournament not found'});
-			return;
-		}
-		const match_utils = require('./match_utils');
-		if (match_utils.is_tournament_automation_enabled(tournament)
-			&& tournament.call_next_possible_scheduled_match_in_preparation) {
-			res.json({status: 'error', message: 'Automatic calling is enabled for this tournament - manual calling is disabled.'});
-			return;
-		}
-
-		const match_automation = require('./match_automation');
-		const current_tournament = {...tournament, courts, matches, umpires};
-		// Re-check eligibility against current state rather than trusting the
-		// client's (possibly stale) view - closes the race where the match
-		// shown in the picker got called, cancelled, or moved by someone else
-		// in the seconds between the page loading the list and staff clicking
-		// Call. We always call the EXACT match the client asked for, never a
-		// re-picked "best" candidate - that's what caused the wrong-match bug.
-		const candidates = match_automation.find_call_on_court_candidates(current_tournament, court_id, {now_ts: req.app.clock ? req.app.clock.now_ms() : Date.now()});
-		const match = (candidates || []).find(m => m._id === match_id);
-		if (!match) {
-			res.json({status: 'error', message: 'This match is no longer available to call on this court - refresh and try again.'});
-			return;
-		}
-
-		match.setup.court_id = court_id;
-		match.setup.now_on_court = true;
-		match_utils.call_match(req.app, tournament, match, undefined, (callErr) => {
-			if (callErr) {
-				res.json({status: 'error', message: callErr && (callErr.message || String(callErr))});
-				return;
-			}
-			res.json({status: 'ok'});
-		});
-	});
-}
-
-// Staff tap on a reminder row: "I've called/announced this one again."
+// Staff tap on a reminder row: "I've called/announced this one (again)."
 // Deliberately its own field, separate from teams_present - that field is
 // exclusively for the court tablet's own presence-confirm buttons (the
 // players' own signal). call_reminder_ack_level just remembers the highest
 // level staff has acknowledged, so the row stays hidden on this page until
 // it escalates past that level - it has no effect anywhere else (not the
 // escalation timer's eligibility, not the court-overview colors, nothing
-// player-facing).
+// player-facing, and it never touches court_id/now_on_court - this handler
+// only ever acknowledges, it never calls).
 function courts_to_call_acknowledge_handler(req, res) {
 	const tournament_key = req.params.tournament_key;
 	const match_id = req.body && req.body.match_id;
 	const level = req.body && req.body.level;
-	if (!match_id || (level !== 1 && level !== 2)) {
+	if (!match_id || (level !== 0 && level !== 1 && level !== 2)) {
 		res.json({status: 'error', message: 'Missing match_id or invalid level'});
 		return;
 	}
@@ -1043,7 +941,8 @@ function courts_to_call_acknowledge_handler(req, res) {
 			res.json({status: 'error', message: findErr ? findErr.message : 'Match not found'});
 			return;
 		}
-		if ((match.setup.call_reminder_ack_level || 0) >= level) {
+		// -1 (never acknowledged), not 0, so a level-0 ack still writes.
+		if ((match.setup.call_reminder_ack_level ?? -1) >= level) {
 			res.json({status: 'ok'});
 			return;
 		}
@@ -1117,19 +1016,15 @@ h1 { font-size: 3vmin; margin-bottom: 1.5vmin; color: #ccc; flex-shrink: 0; }
 .final-call  .match-call-label { color: #e91e8c; }
 .match-info { flex: 1; }
 .match-players { font-size: 2.5vmin; color: #eee; }
-.match-event { font-size: 2vmin; color: #bbb; font-style: italic; margin-top: 0.4vmin; }
-.match-select { font-size: 2.2vmin; width: 100%; background: #2a1240; color: #eee; border: 1px solid #7b1fa2; border-radius: 0.8vmin; padding: 0.8vmin; }
 .match-call-btn { font-size: 2.5vmin; background: #7b1fa2; color: #fff; border: none; border-radius: 1vmin; padding: 1vmin 2vmin; cursor: pointer; flex-shrink: 0; }
 .second-call .match-call-btn { background: #f57c00; }
 .final-call  .match-call-btn { background: #e91e8c; }
 #empty-msg { color: #555; font-size: 2.5vmin; margin-top: 3vmin; text-align: center; }
-#auto-note { color: #666; font-size: 1.6vmin; margin-bottom: 1vmin; }
 #last-update { font-size: 1.5vmin; color: #555; margin-top: 1vmin; flex-shrink: 0; }
 </style>
 </head>
 <body>
 <h1>Courts to Call</h1>
-<div id="auto-note"></div>
 <div id="match-list"></div>
 <div id="last-update"></div>
 <script>
@@ -1137,23 +1032,19 @@ var TOURNAMENT_KEY = ${JSON.stringify(tournament_key)};
 var POLL_INTERVAL = 5000;
 var _STRINGS = (${JSON.stringify(tournament.language || 'de')} === 'de') ? {
 	title: 'Feldaufruf',
+	first_call: 'Aufruf',
 	second_call: '⚠ 2. Aufruf',
 	final_call: '⚠ Letzter Aufruf',
-	call_btn: 'Aufrufen',
 	confirm_btn: 'Aufruf erledigt',
 	all_called: 'Nichts zu tun – alle Felder sind versorgt.',
-	auto_on: 'Automatischer Feldaufruf ist aktiv – diese Liste sollte meist leer sein.',
-	auto_off: 'Automatischer Feldaufruf ist deaktiviert – bitte manuell aufrufen.',
 	last_update: 'Letztes Update: ',
 } : {
 	title: 'Courts to Call',
+	first_call: 'Call',
 	second_call: '⚠ 2nd Call',
 	final_call: '⚠ Final Call',
-	call_btn: 'Call',
 	confirm_btn: 'Call done',
 	all_called: 'Nothing to do – all courts are covered.',
-	auto_on: 'Automatic calling is on – this list should usually be empty.',
-	auto_off: 'Automatic calling is off – please call matches manually.',
 	last_update: 'Last update: ',
 };
 document.title = _STRINGS.title;
@@ -1186,75 +1077,26 @@ function post(url, body, cb) {
 	xhr.send(JSON.stringify(body));
 }
 
-function match_label(match) {
-	var event_text = match.setup.event_name || '';
-	if (match.setup.match_name) event_text += (event_text ? ' – ' : '') + match.setup.match_name;
-	var players = players_str(match.setup, 0) + ' vs ' + players_str(match.setup, 1);
-	return event_text ? (players + ' (' + event_text + ')') : players;
-}
-
-// One free court + a picker of the matches currently eligible to be called
-// there. Staff picks exactly which match goes out - the server re-validates
-// and calls that exact match_id, never a re-picked "best" candidate, so the
-// row on screen always matches what actually gets called.
-function make_call_row(entry) {
-	var court = entry.court;
-	var candidates = entry.candidates || [];
-	var row = document.createElement('div');
-	row.className = 'match-row';
-	var busy_key = 'call:' + court.court_id;
-
-	var court_el = document.createElement('div');
-	court_el.className = 'match-court';
-	court_el.textContent = court.label;
-	row.appendChild(court_el);
-
-	var info_el = document.createElement('div');
-	info_el.className = 'match-info';
-	var select = document.createElement('select');
-	select.className = 'match-select';
-	candidates.forEach(function(match) {
-		var raw_id = String(match.setup.match_id || '').replace(/^bts_/, '');
-		var opt = document.createElement('option');
-		opt.value = raw_id;
-		opt.textContent = match_label(match);
-		select.appendChild(opt);
-	});
-	info_el.appendChild(select);
-	row.appendChild(info_el);
-
-	var btn = document.createElement('button');
-	btn.className = 'match-call-btn';
-	btn.textContent = _STRINGS.call_btn;
-	btn.addEventListener('click', function() {
-		if (_busy[busy_key] || !select.value) return;
-		_busy[busy_key] = true;
-		row.classList.add('calling');
-		post('/h/' + encodeURIComponent(TOURNAMENT_KEY) + '/courts-to-call/call', {court_id: court.court_id, match_id: select.value}, function(err) {
-			delete _busy[busy_key];
-			if (err) row.classList.remove('calling');
-			poll();
-		});
-	});
-	row.appendChild(btn);
-	return row;
-}
-
+// A match currently on a court, waiting for the calling person to
+// (re-)announce it out loud. Tapping the row is purely an acknowledgement -
+// it never assigns a match to a court or calls anything; that already
+// happened (via admin drag-and-drop or automatic calling) before this row
+// ever appeared.
 function make_reminder_row(match) {
-	var level = match.setup.final_call_at ? 2 : 1;
+	var level = match.setup.final_call_at ? 2 : (match.setup.second_call_at ? 1 : 0);
 	var row = document.createElement('div');
-	row.className = 'match-row ' + (level === 2 ? 'final-call' : 'second-call');
+	row.className = 'match-row' + (level === 2 ? ' final-call' : level === 1 ? ' second-call' : '');
 	var raw_id = String(match.setup.match_id || '').replace(/^bts_/, '');
 	var busy_key = 'ack:' + raw_id;
 	row.addEventListener('click', function() {
 		if (_busy[busy_key]) return;
 		_busy[busy_key] = true;
 		row.classList.add('calling');
-		// "I've called/announced this one again" - never touches teams_present
-		// or anything player-facing, that's exclusively the court tablet's own
+		// "I've announced this one (again)" - never touches teams_present or
+		// anything player-facing, that's exclusively the court tablet's own
 		// presence-confirm buttons. Just remembers, server-side, that staff
-		// has acknowledged this level so it reappears only if it escalates
-		// further.
+		// has acknowledged this level so the row reappears only if it
+		// escalates further.
 		post('/h/' + encodeURIComponent(TOURNAMENT_KEY) + '/courts-to-call/acknowledge', {match_id: raw_id, level: level}, function(err) {
 			delete _busy[busy_key];
 			if (err) row.classList.remove('calling');
@@ -1271,7 +1113,7 @@ function make_reminder_row(match) {
 	info_el.className = 'match-info';
 	var label_el = document.createElement('div');
 	label_el.className = 'match-call-label';
-	label_el.textContent = level === 2 ? _STRINGS.final_call : _STRINGS.second_call;
+	label_el.textContent = level === 2 ? _STRINGS.final_call : level === 1 ? _STRINGS.second_call : _STRINGS.first_call;
 	info_el.appendChild(label_el);
 	var players_el = document.createElement('div');
 	players_el.className = 'match-players';
@@ -1290,19 +1132,15 @@ function render(data) {
 	var container = document.getElementById('match-list');
 	container.innerHTML = '';
 
-	document.getElementById('auto-note').textContent =
-		data.call_settings && data.call_settings.automatic_calling_enabled ? _STRINGS.auto_on : _STRINGS.auto_off;
-
 	var reminders = data.reminders || [];
 
-	if (reminders.length === 0 && (!data.to_call || data.to_call.length === 0)) {
+	if (reminders.length === 0) {
 		var empty = document.createElement('div');
 		empty.id = 'empty-msg';
 		empty.textContent = _STRINGS.all_called;
 		container.appendChild(empty);
 	} else {
 		reminders.forEach(function(m) { container.appendChild(make_reminder_row(m)); });
-		(data.to_call || []).forEach(function(entry) { container.appendChild(make_call_row(entry)); });
 	}
 
 	document.getElementById('last-update').textContent = _STRINGS.last_update + new Date().toLocaleTimeString();
@@ -1358,7 +1196,6 @@ module.exports = {
 	matches_handler,
 	court_overview_handler,
 	courts_to_call_data_handler,
-	courts_to_call_call_handler,
 	courts_to_call_acknowledge_handler,
 	courts_to_call_handler,
 };
