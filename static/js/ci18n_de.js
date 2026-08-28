@@ -162,6 +162,7 @@ var ci18n_de = Object.assign(
 	'display_setting:tablet_mode': 'Tablet-Modus: ',
 	'display_setting:tablet_mode:umpire': 'Ergebniseingabe (Schiedsrichter)',
 	'display_setting:tablet_mode:scorecard': 'Ergebniseingabe (Spielzettel)',
+	'display_setting:tablet_mode:scorecard_with_attendance': 'Ergebniseingabe (Spielzettel, dunkel, mit Anwesenheitscheck)',
 	'display_setting:neversettings': 'Settings-Dialog auf dem Gerät sperren',
 	'display_setting:autohide': 'Verberge Einstellungen nach (ms): ',
 	'display_setting:click_mode': 'Touch-Erkennung: ',

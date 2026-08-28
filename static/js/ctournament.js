@@ -6298,10 +6298,12 @@ var ctournament = (function() {
 		const ALL_TABLET_MODES = [
 			'umpire',
 			'scorecard',
+			'scorecard_with_attendance',
 		];
 		const ALL_TABLET_MODE_LABELS = [
 			ci18n('display_setting:tablet_mode:umpire'),
 			ci18n('display_setting:tablet_mode:scorecard'),
+			ci18n('display_setting:tablet_mode:scorecard_with_attendance'),
 		];
 		const ALL_STYLE_MODES = [
 			'default',
@@ -6660,7 +6662,7 @@ var ctournament = (function() {
 		const isDisplayMode = currentDeviceMode !== 'umpire';
 		const tabletModeInput = form ? form.querySelector('[name="tablet_mode"]') : null;
 		const currentTabletMode = tabletModeInput ? (tabletModeInput.value || 'umpire') : 'umpire';
-		const isScorecardTabletMode = currentTabletMode === 'scorecard';
+		const isScorecardTabletMode = currentTabletMode === 'scorecard' || currentTabletMode === 'scorecard_with_attendance';
 		const umpirePanelOnlyTabletFields = {
 			show_announcements: true,
 			negative_timers: true,
