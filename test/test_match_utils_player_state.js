@@ -63,6 +63,40 @@ _describe('match utils player state helpers', () => {
 		assert.strictEqual(match.setup.teams[1].players[1].tablet_break_active, false);
 	});
 
+	_it('does not block a match against its own players when it is the one just called', async () => {
+		const match = make_match();
+
+		// This mirrors call_match/switch_court: after a match is persisted
+		// as on-court, set_player_on_court re-queries every match in the
+		// tournament (including this one) and checks each against the
+		// just-called match's own player list - without excluding the
+		// match's own _id, it always matches itself here and used to
+		// overwrite its own state to 'blocked' as a side effect of being
+		// called, which then stuck forever (BTP sync treats 'blocked' as
+		// sticky while still on court).
+		const result = await match_utils.calc_match_set_player_on_court(match, {
+			court_id: 'default_5',
+			teams: match.setup.teams,
+		}, match._id);
+
+		assert.strictEqual(result, null);
+		assert.strictEqual(match.setup.state, 'running');
+		assert.strictEqual(match.setup.teams[0].players[0].now_playing_on_court, undefined);
+	});
+
+	_it('still blocks a different match sharing a player with the one just called', async () => {
+		const match = make_match();
+		match._id = 'm2';
+
+		const result = await match_utils.calc_match_set_player_on_court(match, {
+			court_id: 'default_5',
+			teams: [{ players: [{ btp_id: 11 }] }, { players: [] }],
+		}, 'm1');
+
+		assert.strictEqual(result, match);
+		assert.strictEqual(match.setup.state, 'blocked');
+	});
+
 	_it('ignores incomplete tablet-operator setup without crashing', async () => {
 		const match = make_match();
 

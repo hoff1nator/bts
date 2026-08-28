@@ -373,7 +373,7 @@ async function call_match(app, tournament, match, old_court, callback) {
 		(wcb) => notify_change_match_edit(app, match, wcb),
 		(wcb) => notify_bupws(app, match, old_court, wcb),
 		(wcb) => notify_change_match_called_on_court(app, match, wcb),
-		(wcb) => set_player_on_court(app, tournament.key, match.setup, wcb),
+		(wcb) => set_player_on_court(app, tournament.key, match.setup, match._id, wcb),
 		(wcb) => set_player_on_tablet(app, tournament.key, match.setup, wcb),
 		(wcb) => update_btp_courts(app, tournament.key, match, wcb),
 		(wcb) => auto_execute_preparation_selection_for_setup(app, tournament, match.setup, wcb)],
@@ -408,7 +408,7 @@ async function switch_court(app, tournament, match, old_court, callback) {
 		(wcb) => notify_change_match_edit(app, match, wcb),
 		(wcb) => notify_bupws(app, match, old_court, wcb),
 		(wcb) => notify_change_match_called_on_court(app, match, wcb),
-		(wcb) => set_player_on_court(app, tournament.key, match.setup, wcb),
+		(wcb) => set_player_on_court(app, tournament.key, match.setup, match._id, wcb),
 		(wcb) => set_player_on_tablet(app, tournament.key, match.setup, wcb),
 		(wcb) => update_btp_courts(app, tournament.key, match, wcb)
 		],
@@ -1302,9 +1302,22 @@ async function set_player_on_tablet (app, tkey, match_on_court_setup, callback) 
 	});
 }
 
-function calc_match_set_player_on_court(match, match_on_court_setup) {
+function calc_match_set_player_on_court(match, match_on_court_setup, exclude_match_id) {
 	return new Promise((resolve) => {
 		if(match?.setup?.now_on_court == false) {
+			return resolve(null);
+		}
+		// A match's own players are, by definition, "now playing on court"
+		// on that same match - that's not a conflict to block, it's just
+		// this match being called. Without this check, every match called
+		// via call_match/switch_court immediately re-found itself in the
+		// matches.find() below (already persisted with now_on_court:true a
+		// few steps earlier in the same waterfall) and matched its own
+		// players against on_court_btp_ids, so it permanently overwrote its
+		// own state to 'blocked' right as it was called - and since BTP
+		// sync treats 'blocked' as sticky while still on court, it never
+		// recovered, silently disappearing from court-overview.
+		if (exclude_match_id != null && match?._id === exclude_match_id) {
 			return resolve(null);
 		}
 
@@ -1331,15 +1344,15 @@ function calc_match_set_player_on_court(match, match_on_court_setup) {
 	});
 }
 
-async function set_player_on_court (app, tkey, match_on_court_setup, callback) {	
-	const admin = require('./admin'); // avoid dependency cycle	
+async function set_player_on_court (app, tkey, match_on_court_setup, exclude_match_id, callback) {
+	const admin = require('./admin'); // avoid dependency cycle
 	app.db.matches.find({'tournament_key': tkey}, async (err, matches) => {
 		if (err) {
 			callback(err);
 		}
 
 		async.each(matches, async (match) => {
-			const changed_match = await calc_match_set_player_on_court(match, match_on_court_setup);
+			const changed_match = await calc_match_set_player_on_court(match, match_on_court_setup, exclude_match_id);
 			if (changed_match != null) {
 				const setup = changed_match.setup;
 				const match_q = {_id: changed_match._id};

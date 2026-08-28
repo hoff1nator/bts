@@ -1381,7 +1381,7 @@ async function integrate_matches(app, tkey, btp_state, scoring_formats, location
 		matches_player_changed.forEach(async (match_player_changed) => {
 			let match = match_player_changed;
 			matches_on_court.forEach(async (match_on_court) => {
-				const changed_match_on_court = await match_utils.calc_match_set_player_on_court(match, match_on_court.setup);
+				const changed_match_on_court = await match_utils.calc_match_set_player_on_court(match, match_on_court.setup, match_on_court._id);
 				if(changed_match_on_court != null) {
 					match = changed_match_on_court;
 				}
@@ -1395,7 +1395,7 @@ async function integrate_matches(app, tkey, btp_state, scoring_formats, location
 		matches_to_add.forEach(async (match_to_add) => {
 			let match = match_to_add;
 			matches_on_court.forEach(async (match_on_court) => {
-				const changed_match_on_court = await match_utils.calc_match_set_player_on_court(match, match_on_court.setup);
+				const changed_match_on_court = await match_utils.calc_match_set_player_on_court(match, match_on_court.setup, match_on_court._id);
 				if(changed_match_on_court != null) {
 					match = changed_match_on_court;
 				}
@@ -3012,7 +3012,7 @@ async function integrate_now_on_court(app, tkey, callback) {
 
 	function setPlayerStateForMatch(match) {
 		return new Promise((resolve, reject) => {
-			match_utils.set_player_on_court(app, tkey, match.setup, (err) => {
+			match_utils.set_player_on_court(app, tkey, match.setup, match._id, (err) => {
 				if (err) return reject(err);
 				match_utils.set_player_on_tablet(app, tkey, match.setup, (err) => {
 					if (err) return reject(err);
