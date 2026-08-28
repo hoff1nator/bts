@@ -2265,8 +2265,14 @@ function start_call_escalation_manager(app) {
 	if (call_escalation_interval || !app || !app.db) {
 		return;
 	}
+	// Escalation runs for every tournament regardless of
+	// courts_to_call_enabled - that flag only controls whether staff see a
+	// todo list to acknowledge calls on, not whether a match's calling
+	// status advances over time. Without it, a match just has no "not yet
+	// confirmed" step: it starts at second_call_at/final_call_at's normal
+	// elapsed-time schedule with nobody needing to tap anything first.
 	call_escalation_interval = setInterval(() => {
-		app.db.tournaments.find({ courts_to_call_enabled: true }, (err, tournaments) => {
+		app.db.tournaments.find({}, (err, tournaments) => {
 			if (err) {
 				return;
 			}

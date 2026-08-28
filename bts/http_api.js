@@ -324,15 +324,19 @@ function matches_handler(req, res) {
 			};
 		});
 
-		const ctc_enabled = !!tournament.courts_to_call_enabled;
+		// second_call_enabled/final_call_enabled are deliberately independent
+		// of courts_to_call_enabled - escalation runs regardless of whether
+		// the todo list feature is on (see match_utils.js's
+		// start_call_escalation_manager), so the court-overview client needs
+		// these to color a card correctly even with the todo list off.
 		const event = bupws.create_event_representation(tournament);
 		event.matches = matches;
 		event.courts = courts;
 		event.call_settings = {
-			courts_to_call_enabled: ctc_enabled,
-			second_call_enabled: ctc_enabled && tournament.second_call_enabled !== false,
+			courts_to_call_enabled: !!tournament.courts_to_call_enabled,
+			second_call_enabled: tournament.second_call_enabled !== false,
 			second_call_s: tournament.second_call_s || 420,
-			final_call_enabled: ctc_enabled && tournament.final_call_enabled !== false,
+			final_call_enabled: tournament.final_call_enabled !== false,
 			final_call_s: tournament.final_call_s || 300,
 		};
 		event.battery_by_court = bupws_v2.get_battery_by_court();
@@ -441,7 +445,6 @@ var _STRINGS = (${JSON.stringify(lang)} === 'de') ? {
 	title: 'Feldübersicht',
 	no_game: 'Kein Spiel',
 	not_called: 'Noch nicht aufgerufen',
-	oncourt: 'Auf dem Feld',
 	waiting: 'Warte auf Spieler',
 	second_call: '⚠ 2. Aufruf',
 	final_call: '⚠ Letzter Aufruf',
@@ -451,7 +454,6 @@ var _STRINGS = (${JSON.stringify(lang)} === 'de') ? {
 	title: 'Court Overview',
 	no_game: 'No game',
 	not_called: 'Not called yet',
-	oncourt: 'On court',
 	waiting: 'Waiting for players',
 	second_call: '⚠ 2nd Call',
 	final_call: '⚠ Final Call',
@@ -557,14 +559,17 @@ function render(courts, matches, call_settings, battery_by_court) {
 			} else {
 				status_el.textContent = _STRINGS.no_game;
 			}
-		} else if (call_settings && call_settings.courts_to_call_enabled && !match.setup.teams_present) {
+		} else if (!match.setup.teams_present) {
 			// Mirrors courts-to-call's own escalation level derivation
 			// (final_call_at ? 2 : second_call_at ? 1 : 0) - same fields,
 			// same thresholds, so this card always agrees with the
-			// courts-to-call todo list about where a match stands. Only
-			// the first call has a distinct "done" color (purple -> yellow
-			// once acknowledged) - once it escalates to 2nd/final call the
-			// color reflects the escalation level itself, not ack status.
+			// courts-to-call todo list about where a match stands.
+			// Escalation itself runs regardless of courts_to_call_enabled
+			// (match_utils.js's start_call_escalation_manager) - that
+			// setting only controls whether the "not yet confirmed" purple
+			// sub-state exists. With it off there's no confirmation step,
+			// so a call just starts at yellow ("waiting") instead of
+			// purple, but still escalates to orange/alert on schedule.
 			var status_color, status_text;
 			if (call_settings.final_call_enabled && match.setup.final_call_at) {
 				status_color = 'status-alert';
@@ -572,12 +577,12 @@ function render(courts, matches, call_settings, battery_by_court) {
 			} else if (call_settings.second_call_enabled && match.setup.second_call_at) {
 				status_color = 'status-orange';
 				status_text = _STRINGS.second_call;
-			} else if ((match.setup.call_reminder_ack_level ?? -1) >= 0) {
-				status_color = 'status-yellow';
-				status_text = _STRINGS.waiting;
-			} else {
+			} else if (call_settings && call_settings.courts_to_call_enabled && (match.setup.call_reminder_ack_level ?? -1) < 0) {
 				status_color = 'status-purple';
 				status_text = _STRINGS.not_called;
+			} else {
+				status_color = 'status-yellow';
+				status_text = _STRINGS.waiting;
 			}
 			card.classList.add(status_color);
 			status_el.textContent = status_text;
@@ -590,8 +595,11 @@ function render(courts, matches, call_settings, battery_by_court) {
 			if (match.setup.match_name) event_text += (event_text ? ' – ' : '') + match.setup.match_name;
 			event_el.textContent = event_text;
 		} else {
+			// Only reachable with teams_present true now - the "not
+			// present yet" case is always handled by the escalation
+			// branch above, regardless of courts_to_call_enabled.
 			card.classList.add('status-green');
-			status_el.textContent = (call_settings && call_settings.courts_to_call_enabled) ? _STRINGS.present : _STRINGS.oncourt;
+			status_el.textContent = _STRINGS.present;
 			set_players_el(players_el, match.setup);
 			if (match.setup.called_timestamp) {
 				timer_el.textContent = format_duration(Date.now() - match.setup.called_timestamp);
@@ -906,14 +914,13 @@ function courts_to_call_data_handler(req, res) {
 			})
 			.map(m => bupws.create_match_representation(req.app, tournament, m));
 
-		const ctc_enabled = !!tournament.courts_to_call_enabled;
 		res.json({
 			status: 'ok',
 			reminders,
 			call_settings: {
-				courts_to_call_enabled: ctc_enabled,
-				second_call_enabled: ctc_enabled && tournament.second_call_enabled !== false,
-				final_call_enabled: ctc_enabled && tournament.final_call_enabled !== false,
+				courts_to_call_enabled: !!tournament.courts_to_call_enabled,
+				second_call_enabled: tournament.second_call_enabled !== false,
+				final_call_enabled: tournament.final_call_enabled !== false,
 			},
 		});
 	});
