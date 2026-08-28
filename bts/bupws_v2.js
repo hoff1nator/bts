@@ -2240,6 +2240,16 @@ async function send_umpire_current_state(app, ws, tournament_key, msg, options =
 }
 
 async function handle_init(app, ws, msg) {
+	// Adopt the client's own persistent id (see btsh.js's get_bts_client_id)
+	// as this socket's identity before anything below calls
+	// determine_client_id(ws) - that function only ever computes a fallback
+	// from the source IP when ws.client_id is still unset, so setting it
+	// here is enough to fix identity for every downstream client_id-keyed
+	// lookup (court/displaysetting resolution, admin device list, panel
+	// fan-out) without touching any of those call sites individually.
+	if (!ws.client_id && msg.client_id) {
+		ws.client_id = String(msg.client_id);
+	}
 	const tournament_key = msg.tournament_key || default_tournament_key;
 	ws.last_tournament_key = tournament_key;
 	if (await send_use_bup_v1_if_disabled(app, ws, tournament_key)) {
@@ -2540,7 +2550,12 @@ async function handle_device_info(app, ws, msg) {
 		return;
 	}
 	device_info.client_ip = ws?._socket?.remoteAddress;
-	const client_id = determine_client_id_from_ip(device_info.client_ip);
+	// Reuse this socket's already-established identity (set from the
+	// client's persistent id during handle_init) rather than recomputing
+	// one from the source IP here - init always arrives before device_info
+	// (both sent synchronously in ws.onopen, in that order), so ws.client_id
+	// is already correct by the time this runs.
+	const client_id = determine_client_id(ws);
 	const hostname = await determine_client_hostname(ws);
 	let display_court_displaysetting = await get_display_court_displaysettings(app, client_id);
 	if (!display_court_displaysetting) {

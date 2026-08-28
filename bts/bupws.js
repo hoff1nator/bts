@@ -488,7 +488,7 @@ async function handle_score_update(app, ws, msg) {
 					if (!device_info) {
 						return cb(null, updated_match, changed_court);
 					}
-					update_device_info(app, tournament_key, device_info);
+					update_device_info(app, tournament_key, ws, device_info);
 					return cb(null, updated_match, changed_court);
 				},
 			], finish);
@@ -500,16 +500,19 @@ async function handle_device_info(app, ws, msg) {
 	const device_info = msg.device;
 	if (device_info) {
 		device_info.client_ip = ws._socket.remoteAddress;
-		update_device_info(app, tournament_key, device_info);
+		update_device_info(app, tournament_key, ws, device_info);
 	}
 }
-async function update_device_info(app, tournament_key, device_info) {
+async function update_device_info(app, tournament_key, ws, device_info) {
 	app.db.tournaments.findOne({ key: tournament_key }, async (err, tournament) => {
 		if (!err || !tournament) {
 			err = { message: 'No tournament ' + default_tournament_key };
 		}
-		const client_id = determine_client_id_from_ip(device_info.client_ip);
-		const panel = fetch_panel(client_id);
+		// Use this socket's own already-established identity rather than
+		// re-deriving one from its source IP and looking the panel back up
+		// by that (potentially colliding) id - ws is right here.
+		const client_id = determine_client_id(ws);
+		const panel = ws;
 		if (panel != null) {
 			const hostname = await determine_client_hostname(panel);
 			var display_court_displaysetting = await get_display_court_displaysettings(app, client_id);
@@ -553,6 +556,11 @@ function create_display_court_displaysettings(client_id, hostname, court_id, dis
 }
 
 async function handle_init(app, ws, msg) {
+	// See bupws_v2.js's handle_init for why this needs to happen before
+	// determine_client_id(ws) is called anywhere below.
+	if (!ws.client_id && msg.client_id) {
+		ws.client_id = String(msg.client_id);
+	}
 	const tournament_key = msg.tournament_key || default_tournament_key;
 	ws.last_tournament_key = tournament_key;
 	if (await is_bupws_v2_enabled(app, tournament_key)) {
