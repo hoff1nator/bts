@@ -8780,7 +8780,7 @@ function update_officials() {
 		for (const c of curt.courts) {
 			const tr = uiu.el(courts_tbody, 'tr');
 			if(l._id != c.location_id) {
-				l = utils.find(curt.locations, l => l._id === c.location_id);
+				l = utils.find(curt.locations, l => l._id === c.location_id) || {_id: c.location_id, name: '-'};
 			}
 
 			uiu.el(tr, 'th', {}, l.name);
