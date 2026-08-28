@@ -960,26 +960,37 @@ function courts_to_call_call_handler(req, res) {
 	});
 }
 
-// Manual re-announce: lets staff mark a match as needing a 2nd/final call
-// right now, ahead of (or in addition to) the automatic escalation timer
-// (see match_utils.start_call_escalation_manager). Same fields, same
-// broadcast - just human-triggered instead of time-triggered.
-function courts_to_call_escalate_handler(req, res) {
+// Staff tap on a reminder row: "yes, I've called/seen this one" - marks
+// presence confirmed, same field the kiosk's presence-confirm screen sets
+// (see bupws_v2.async_handle_presence_update). That's what actually
+// removes a match from this list for good (the to_call/reminders query
+// below filters on !teams_present) and stops the automatic escalation
+// timer from touching it again - a bare timestamp bump on second_call_at/
+// final_call_at would just come back on the next poll since nothing
+// downstream ever clears it.
+function courts_to_call_confirm_presence_handler(req, res) {
 	const tournament_key = req.params.tournament_key;
 	const match_id = req.body && req.body.match_id;
-	const level = req.body && req.body.level;
-	if (!match_id || (level !== 1 && level !== 2)) {
-		res.json({status: 'error', message: 'Missing match_id or invalid level'});
+	if (!match_id) {
+		res.json({status: 'error', message: 'Missing match_id'});
 		return;
 	}
-	const update = (level === 2) ? {'setup.final_call_at': Date.now()} : {'setup.second_call_at': Date.now()};
-	req.app.db.matches.update({_id: match_id, tournament_key}, {$set: update}, {}, (err, numAffected) => {
+	const update = {
+		'setup.teams_present': true,
+		'setup.team1_present': true,
+		'setup.team2_present': true,
+	};
+	req.app.db.matches.update({_id: match_id, tournament_key}, {$set: update}, {returnUpdatedDocs: true}, (err, numAffected, updatedMatch) => {
 		if (err || numAffected !== 1) {
 			res.json({status: 'error', message: err ? err.message : 'Match not found'});
 			return;
 		}
 		const admin = require('./admin');
 		admin.notify_change(req.app, tournament_key, 'match_edit', {match__id: match_id});
+		const court_id = updatedMatch && updatedMatch.setup && updatedMatch.setup.court_id;
+		if (court_id) {
+			bupws_v2.handle_score_change(req.app, tournament_key, court_id, {}).catch(() => {});
+		}
 		res.json({status: 'ok'});
 	});
 }
@@ -1063,8 +1074,7 @@ var _STRINGS = (${JSON.stringify(tournament.language || 'de')} === 'de') ? {
 	second_call: '⚠ 2. Aufruf',
 	final_call: '⚠ Letzter Aufruf',
 	call_btn: 'Aufrufen',
-	remind_btn_2: '2. Aufruf auslösen',
-	remind_btn_3: 'Letzten Aufruf auslösen',
+	confirm_btn: 'Bestätigen',
 	all_called: 'Nichts zu tun – alle Felder sind versorgt.',
 	auto_on: 'Automatischer Feldaufruf ist aktiv – diese Liste sollte meist leer sein.',
 	auto_off: 'Automatischer Feldaufruf ist deaktiviert – bitte manuell aufrufen.',
@@ -1074,8 +1084,7 @@ var _STRINGS = (${JSON.stringify(tournament.language || 'de')} === 'de') ? {
 	second_call: '⚠ 2nd Call',
 	final_call: '⚠ Final Call',
 	call_btn: 'Call',
-	remind_btn_2: 'Trigger 2nd call',
-	remind_btn_3: 'Trigger final call',
+	confirm_btn: 'Confirm',
 	all_called: 'Nothing to do – all courts are covered.',
 	auto_on: 'Automatic calling is on – this list should usually be empty.',
 	auto_off: 'Automatic calling is off – please call matches manually.',
@@ -1159,12 +1168,12 @@ function make_reminder_row(match) {
 	var row = document.createElement('div');
 	row.className = 'match-row ' + (level === 2 ? 'final-call' : 'second-call');
 	var raw_id = String(match.setup.match_id || '').replace(/^bts_/, '');
-	var busy_key = 'esc:' + raw_id;
+	var busy_key = 'confirm:' + raw_id;
 	row.addEventListener('click', function() {
-		if (_busy[busy_key] || level >= 2) return;
+		if (_busy[busy_key]) return;
 		_busy[busy_key] = true;
 		row.classList.add('calling');
-		post('/h/' + encodeURIComponent(TOURNAMENT_KEY) + '/courts-to-call/escalate', {match_id: raw_id, level: 2}, function(err) {
+		post('/h/' + encodeURIComponent(TOURNAMENT_KEY) + '/courts-to-call/confirm-presence', {match_id: raw_id}, function(err) {
 			delete _busy[busy_key];
 			if (err) row.classList.remove('calling');
 			poll();
@@ -1190,8 +1199,7 @@ function make_reminder_row(match) {
 
 	var btn = document.createElement('button');
 	btn.className = 'match-call-btn';
-	btn.textContent = level === 2 ? _STRINGS.final_call : _STRINGS.remind_btn_3;
-	if (level === 2) btn.disabled = true;
+	btn.textContent = _STRINGS.confirm_btn;
 	row.appendChild(btn);
 	return row;
 }
@@ -1267,6 +1275,6 @@ module.exports = {
 	court_overview_handler,
 	courts_to_call_data_handler,
 	courts_to_call_call_handler,
-	courts_to_call_escalate_handler,
+	courts_to_call_confirm_presence_handler,
 	courts_to_call_handler,
 };
