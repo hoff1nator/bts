@@ -587,9 +587,15 @@ function render(courts, matches, call_settings, battery_by_court) {
 			card.classList.add(status_color);
 			status_el.textContent = status_text;
 			set_players_el(players_el, match.setup);
-			if (match.setup.called_to_court_at) {
-				timer_el.textContent = format_duration(Date.now() - match.setup.called_to_court_at);
-				timer_el.dataset.since = match.setup.called_to_court_at;
+			// Fall back between the two "when was this called" fields -
+			// called_to_court_at is the newer/more specific one, but
+			// called_timestamp is set on every call too and should never
+			// leave a called-but-not-present card without a timer just
+			// because one of the two fields happens to be missing.
+			var since = match.setup.called_to_court_at || match.setup.called_timestamp;
+			if (since) {
+				timer_el.textContent = format_duration(Date.now() - since);
+				timer_el.dataset.since = since;
 			}
 			var event_text = match.setup.event_name || '';
 			if (match.setup.match_name) event_text += (event_text ? ' – ' : '') + match.setup.match_name;
@@ -601,9 +607,10 @@ function render(courts, matches, call_settings, battery_by_court) {
 			card.classList.add('status-green');
 			status_el.textContent = _STRINGS.present;
 			set_players_el(players_el, match.setup);
-			if (match.setup.called_timestamp) {
-				timer_el.textContent = format_duration(Date.now() - match.setup.called_timestamp);
-				timer_el.dataset.since = match.setup.called_timestamp;
+			var since = match.setup.called_timestamp || match.setup.called_to_court_at;
+			if (since) {
+				timer_el.textContent = format_duration(Date.now() - since);
+				timer_el.dataset.since = since;
 			}
 			var event_text = match.setup.event_name || '';
 			if (match.setup.match_name) event_text += (event_text ? ' – ' : '') + match.setup.match_name;
