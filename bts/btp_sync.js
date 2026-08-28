@@ -565,12 +565,25 @@ function mergeLocalMatchIntoBtpMatch(current_match, match) {
 	if (current_match.btp_winner) {
 		match.setup.state = 'finished';
 	}
-	if (typeof current_match.team1_won === 'boolean' || current_match.btp_winner || current_match.btp_needsync) {
+	// match.setup.now_on_court/court_id here are already the fresh, fully
+	// reliable signal from the current BTP export (craft_match only sets
+	// them when BTP currently reports a CourtID for this match) - only
+	// reinstate the richer local on-court state (call timing, presence,
+	// in-progress score) when BOTH the fresh export AND the local DB still
+	// agree the match is on court. If the fresh export no longer has it on
+	// any court while the DB says it was, that's the planner explicitly
+	// freeing the court without a result - trust that and let the reset
+	// fall through below instead of overwriting it back to stale state
+	// (this used to unconditionally force now_on_court back to true
+	// whenever the DB said so, which silently discarded exactly that
+	// signal - the match would just never change, no DB write, no
+	// notification to BTS or any connected BUP tablet).
+	const just_finished = typeof current_match.team1_won === 'boolean' || current_match.btp_winner || current_match.btp_needsync;
+	const still_on_court = match.setup.now_on_court === true && current_match.setup.now_on_court === true;
+	if (just_finished) {
 		match.setup.now_on_court = false;
 		match.setup.state = 'finished';
-	} else if (current_match.setup.now_on_court === true) {
-		// Keep the local on-court state until the result is explicitly confirmed.
-		match.setup.now_on_court = true;
+	} else if (still_on_court) {
 		if (current_match.setup.state === 'blocked') {
 			match.setup.state = 'blocked';
 		} else if (current_match.setup.called_timestamp) {
@@ -578,16 +591,22 @@ function mergeLocalMatchIntoBtpMatch(current_match, match) {
 		}
 	}
 
-	if (!match.setup.court_id && current_match.setup && current_match.setup.court_id) {
+	// A finished match keeps showing which court it was played on (purely
+	// historical/display info, e.g. court-overview's "last finished on this
+	// court" card) even once BTP stops reporting a court for it - that's
+	// different from the freed-without-result case, where the whole point
+	// is that the court assignment itself should disappear.
+	if ((still_on_court || just_finished) && !match.setup.court_id && current_match.setup.court_id) {
 		match.setup.court_id = current_match.setup.court_id;
 	}
 
-	if (!match.network_score && current_match.network_score) {
-		match.network_score = current_match.network_score;
-	}
-
-	if (current_match.setup.called_timestamp) {
-		match.setup.called_timestamp = current_match.setup.called_timestamp;
+	if (still_on_court) {
+		if (!match.network_score && current_match.network_score) {
+			match.network_score = current_match.network_score;
+		}
+		if (current_match.setup.called_timestamp) {
+			match.setup.called_timestamp = current_match.setup.called_timestamp;
+		}
 	}
 
 	// Preserve calling/presence fields only if match is still on court
@@ -1207,12 +1226,20 @@ async function integrate_matches(app, tkey, btp_state, scoring_formats, location
 						}
 
 						match.btp_needsync = current_match.btp_needsync;
-						match.network_team1_left = current_match.network_team1_left;
-						match.network_team1_serving = current_match.network_team1_serving;
-						match.network_teams_player1_even = current_match.network_teams_player1_even;
-						match.presses = current_match.presses;
-						match.duration_ms = current_match.duration_ms;
-						match.end_ts = current_match.end_ts;
+						// Same "only if BTP's fresh export still agrees this
+						// match is on court" rule as mergeLocalMatchIntoBtpMatch -
+						// otherwise a match the planner freed without a result
+						// would keep its old live-scoring session (presses,
+						// duration, end time) forever, undoing the reset.
+						const still_on_court = match.setup.now_on_court === true && current_match.setup.now_on_court === true;
+						if (still_on_court) {
+							match.network_team1_left = current_match.network_team1_left;
+							match.network_team1_serving = current_match.network_team1_serving;
+							match.network_teams_player1_even = current_match.network_teams_player1_even;
+							match.presses = current_match.presses;
+							match.duration_ms = current_match.duration_ms;
+							match.end_ts = current_match.end_ts;
+						}
 
 						if (match.setup.now_on_court === false) {
 							if (current_match.setup.warmup) {
@@ -1298,6 +1325,22 @@ async function integrate_matches(app, tkey, btp_state, scoring_formats, location
 										match__id: match._id,
 										match: match
 									});
+									// v1 pushed sync-driven match changes straight to
+									// connected BUP tablets/displays too (not just the
+									// admin panel) - v2 dropped that, so e.g. a court the
+									// planner just freed without a result would update in
+									// the DB but any tablet still showing that match would
+									// never find out. Refresh both the match's current
+									// court (if still on one) and its previous court (if
+									// different/now empty) so a tablet on either sees the
+									// change.
+									const bupws = require('./bupws');
+									if (match.setup.court_id) {
+										bupws.handle_score_change(app, match.tournament_key, match.setup.court_id);
+									}
+									if (current_match.setup.court_id && current_match.setup.court_id !== match.setup.court_id) {
+										bupws.handle_score_change(app, match.tournament_key, current_match.setup.court_id);
+									}
 								} else {
 									admin.notify_change(app, match.tournament_key, 'update_player_status', {
 										match__id: match._id,

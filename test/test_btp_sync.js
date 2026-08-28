@@ -376,6 +376,48 @@ _describe('btp_sync', () => {
 		assert.strictEqual(merged.setup.call_reminder_ack_level, 1);
 	});
 
+	_it('resets on-court/call state when BTP no longer has the match on any court and no result was entered', () => {
+		// Reproduces freeing a match from its court directly in the
+		// Tournament Planner without recording a winner - craft_match only
+		// sets setup.court_id/now_on_court when BTP's current export still
+		// includes a CourtID for the match, so the freshly-built btpMatch
+		// here (no court_id/now_on_court at all) is exactly what a freed
+		// match looks like on the wire.
+		const currentMatch = {
+			setup: {
+				court_id: 'court_3',
+				now_on_court: true,
+				state: 'oncourt',
+				called_timestamp: 1000,
+				called_to_court: true,
+				called_to_court_at: 1000,
+				second_call_at: 2000,
+				teams_present: true,
+				team1_present: true,
+				team2_present: true,
+				teams: [{ players: [] }, { players: [] }],
+			},
+			network_score: [[11, 8]],
+		};
+		const btpMatch = {
+			setup: {
+				state: 'scheduled',
+				teams: [{ players: [] }, { players: [] }],
+			},
+		};
+
+		const merged = btp_sync._merge_local_match_into_btp_match(currentMatch, structuredClone(btpMatch));
+
+		assert.strictEqual(merged.setup.now_on_court, undefined);
+		assert.strictEqual(merged.setup.court_id, undefined);
+		assert.strictEqual(merged.setup.called_timestamp, undefined);
+		assert.strictEqual(merged.setup.called_to_court, undefined);
+		assert.strictEqual(merged.setup.called_to_court_at, undefined);
+		assert.strictEqual(merged.setup.second_call_at, undefined);
+		assert.strictEqual(merged.setup.teams_present, undefined);
+		assert.strictEqual(merged.network_score, undefined);
+	});
+
 	_it('backfills called_to_court/called_to_court_at for an on-court match that never had them set', () => {
 		// Reproduces a match imported already-on-court from BTP (or any
 		// other path that only ever set called_timestamp, not
