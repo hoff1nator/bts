@@ -387,6 +387,7 @@ h1 { font-size: 3vmin; margin-bottom: 1.5vmin; color: #ccc; flex-shrink: 0; }
 	padding: 2vmin;
 	display: flex;
 	flex-direction: column;
+	justify-content: space-between;
 	transition: background 0.4s, border-color 0.4s;
 	border: 3px solid transparent;
 	overflow: hidden;
@@ -421,8 +422,6 @@ h1 { font-size: 3vmin; margin-bottom: 1.5vmin; color: #ccc; flex-shrink: 0; }
 .status-orange .status-dot { background: #f57c00; }
 .status-alert .status-dot  { background: #e91e8c; }
 .status-green .status-dot  { background: #2e7d32; }
-.court-link { text-decoration: none; color: inherit; display: flex; flex-direction: column; flex: 1; min-height: 0; justify-content: space-between; }
-.court-card { cursor: pointer; }
 .court-timer-row { display: flex; justify-content: space-between; align-items: center; margin-top: 0.2em; }
 .court-battery { font-size: var(--font-sm); color: #888; margin-left: auto; text-align: right; }
 .court-battery.bat-low { color: #f44336; }
@@ -516,12 +515,6 @@ function render(courts, matches, call_settings, battery_by_court) {
 
 		var card = document.createElement('div');
 		card.className = 'court-card';
-
-		var link = document.createElement('a');
-		link.className = 'court-link';
-		var court_num = (court.court_id || '').replace(/^.*_/, '');
-		link.href = '/r' + court_num;
-		link.target = '_blank';
 
 		var name_el = document.createElement('div');
 		name_el.className = 'court-name';
@@ -620,18 +613,17 @@ function render(courts, matches, call_settings, battery_by_court) {
 			else if (pct <= 30) bat_el.classList.add('bat-mid');
 		}
 
-		link.appendChild(name_el);
-		if (event_el.textContent) link.appendChild(event_el);
-		link.appendChild(status_el);
-		link.appendChild(players_el);
+		card.appendChild(name_el);
+		if (event_el.textContent) card.appendChild(event_el);
+		card.appendChild(status_el);
+		card.appendChild(players_el);
 		if (timer_el.textContent || bat_el.textContent) {
 			var bottom_row = document.createElement('div');
 			bottom_row.className = 'court-timer-row';
 			if (timer_el.textContent) bottom_row.appendChild(timer_el);
 			if (bat_el.textContent) bottom_row.appendChild(bat_el);
-			link.appendChild(bottom_row);
+			card.appendChild(bottom_row);
 		}
-		card.appendChild(link);
 		container.appendChild(card);
 	}
 	document.getElementById('last-update').textContent = _STRINGS.last_update + new Date().toLocaleTimeString();
