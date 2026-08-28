@@ -352,6 +352,7 @@ _describe('btp_sync', () => {
 				teams_present: true,
 				team1_present: true,
 				team2_present: true,
+				call_reminder_ack_level: 1,
 				teams: [{ players: [] }, { players: [] }],
 			},
 		};
@@ -372,6 +373,7 @@ _describe('btp_sync', () => {
 		assert.strictEqual(merged.setup.teams_present, true);
 		assert.strictEqual(merged.setup.team1_present, true);
 		assert.strictEqual(merged.setup.team2_present, true);
+		assert.strictEqual(merged.setup.call_reminder_ack_level, 1);
 	});
 
 	_it('does not preserve call-escalation and presence fields once the match is off court', () => {
@@ -385,6 +387,7 @@ _describe('btp_sync', () => {
 				teams_present: true,
 				team1_present: true,
 				team2_present: true,
+				call_reminder_ack_level: 1,
 				teams: [{ players: [] }, { players: [] }],
 			},
 		};
@@ -402,6 +405,7 @@ _describe('btp_sync', () => {
 		assert.strictEqual(merged.setup.second_call_at, undefined);
 		assert.strictEqual(merged.setup.final_call_at, undefined);
 		assert.strictEqual(merged.setup.teams_present, undefined);
+		assert.strictEqual(merged.setup.call_reminder_ack_level, undefined);
 	});
 
 	_it('parses BTP court numbers from localized court names', () => {

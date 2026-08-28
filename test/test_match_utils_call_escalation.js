@@ -49,6 +49,7 @@ _describe('match utils call escalation', () => {
 				teams_present: true,
 				team1_present: true,
 				team2_present: true,
+				call_reminder_ack_level: 2,
 			},
 		};
 		match_utils.remove_called_timestamp(match, (err) => {
@@ -58,6 +59,7 @@ _describe('match utils call escalation', () => {
 			assert.strictEqual(match.setup.second_call_at, undefined);
 			assert.strictEqual(match.setup.final_call_at, undefined);
 			assert.strictEqual(match.setup.teams_present, undefined);
+			assert.strictEqual(match.setup.call_reminder_ack_level, undefined);
 			assert.strictEqual(match.setup.state, 'scheduled');
 			done();
 		});

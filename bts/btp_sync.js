@@ -592,7 +592,7 @@ function mergeLocalMatchIntoBtpMatch(current_match, match) {
 
 	// Preserve calling/presence fields only if match is still on court
 	if (match.setup.now_on_court) {
-		for (const k of ['called_to_court', 'called_to_court_at', 'second_call_at', 'final_call_at', 'teams_present', 'team1_present', 'team2_present']) {
+		for (const k of ['called_to_court', 'called_to_court_at', 'second_call_at', 'final_call_at', 'teams_present', 'team1_present', 'team2_present', 'call_reminder_ack_level']) {
 			if (current_match.setup[k] !== undefined) {
 				match.setup[k] = current_match.setup[k];
 			}

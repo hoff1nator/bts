@@ -923,7 +923,12 @@ function courts_to_call_data_handler(req, res) {
 			});
 
 		const reminders = matches
-			.filter(m => m.setup && m.setup.now_on_court && !m.setup.teams_present && (m.setup.second_call_at || m.setup.final_call_at))
+			.filter(m => {
+				if (!m.setup || !m.setup.now_on_court || m.setup.teams_present) return false;
+				if (!m.setup.second_call_at && !m.setup.final_call_at) return false;
+				const level = m.setup.final_call_at ? 2 : 1;
+				return !(m.setup.call_reminder_ack_level >= level);
+			})
 			.map(m => bupws.create_match_representation(req.app, tournament, m));
 
 		const ctc_enabled = !!tournament.courts_to_call_enabled;
@@ -957,6 +962,43 @@ function courts_to_call_call_handler(req, res) {
 		match_utils.call_next_candidate_on_court(req.app, tournament, tournament_key, court_id)
 			.then(() => res.json({status: 'ok'}))
 			.catch((callErr) => res.json({status: 'error', message: callErr && (callErr.message || String(callErr))}));
+	});
+}
+
+// Staff tap on a reminder row: "I've called/announced this one again."
+// Deliberately its own field, separate from teams_present - that field is
+// exclusively for the court tablet's own presence-confirm buttons (the
+// players' own signal). call_reminder_ack_level just remembers the highest
+// level staff has acknowledged, so the row stays hidden on this page until
+// it escalates past that level - it has no effect anywhere else (not the
+// escalation timer's eligibility, not the court-overview colors, nothing
+// player-facing).
+function courts_to_call_acknowledge_handler(req, res) {
+	const tournament_key = req.params.tournament_key;
+	const match_id = req.body && req.body.match_id;
+	const level = req.body && req.body.level;
+	if (!match_id || (level !== 1 && level !== 2)) {
+		res.json({status: 'error', message: 'Missing match_id or invalid level'});
+		return;
+	}
+	req.app.db.matches.findOne({_id: match_id, tournament_key}, (findErr, match) => {
+		if (findErr || !match) {
+			res.json({status: 'error', message: findErr ? findErr.message : 'Match not found'});
+			return;
+		}
+		if ((match.setup.call_reminder_ack_level || 0) >= level) {
+			res.json({status: 'ok'});
+			return;
+		}
+		req.app.db.matches.update({_id: match_id, tournament_key}, {$set: {'setup.call_reminder_ack_level': level}}, {}, (err, numAffected) => {
+			if (err || numAffected !== 1) {
+				res.json({status: 'error', message: err ? err.message : 'Match not found'});
+				return;
+			}
+			const admin = require('./admin');
+			admin.notify_change(req.app, tournament_key, 'match_edit', {match__id: match_id});
+			res.json({status: 'ok'});
+		});
 	});
 }
 
@@ -1129,22 +1171,26 @@ function make_call_row(court, match) {
 	return row;
 }
 
-// Dismissing a reminder here only means "I've called/announced this one
-// again" - it must never touch teams_present or any other player-facing
-// state. That's exclusively the court tablet's job (the players themselves
-// tap presence-confirm there). So dismissal is purely local to this page:
-// remembered in memory per match+level, never sent to the server, and it
-// naturally reappears if the match escalates to a higher level later.
-var _dismissed_at_level = {};
-
 function make_reminder_row(match) {
 	var level = match.setup.final_call_at ? 2 : 1;
 	var row = document.createElement('div');
 	row.className = 'match-row ' + (level === 2 ? 'final-call' : 'second-call');
 	var raw_id = String(match.setup.match_id || '').replace(/^bts_/, '');
+	var busy_key = 'ack:' + raw_id;
 	row.addEventListener('click', function() {
-		_dismissed_at_level[raw_id] = level;
-		row.remove();
+		if (_busy[busy_key]) return;
+		_busy[busy_key] = true;
+		row.classList.add('calling');
+		// "I've called/announced this one again" - never touches teams_present
+		// or anything player-facing, that's exclusively the court tablet's own
+		// presence-confirm buttons. Just remembers, server-side, that staff
+		// has acknowledged this level so it reappears only if it escalates
+		// further.
+		post('/h/' + encodeURIComponent(TOURNAMENT_KEY) + '/courts-to-call/acknowledge', {match_id: raw_id, level: level}, function(err) {
+			delete _busy[busy_key];
+			if (err) row.classList.remove('calling');
+			poll();
+		});
 	});
 
 	var court_el = document.createElement('div');
@@ -1178,11 +1224,7 @@ function render(data) {
 	document.getElementById('auto-note').textContent =
 		data.call_settings && data.call_settings.automatic_calling_enabled ? _STRINGS.auto_on : _STRINGS.auto_off;
 
-	var reminders = (data.reminders || []).filter(function(m) {
-		var raw_id = String(m.setup.match_id || '').replace(/^bts_/, '');
-		var level = m.setup.final_call_at ? 2 : 1;
-		return _dismissed_at_level[raw_id] !== level;
-	});
+	var reminders = data.reminders || [];
 
 	if (reminders.length === 0 && (!data.to_call || data.to_call.length === 0)) {
 		var empty = document.createElement('div');
@@ -1248,5 +1290,6 @@ module.exports = {
 	court_overview_handler,
 	courts_to_call_data_handler,
 	courts_to_call_call_handler,
+	courts_to_call_acknowledge_handler,
 	courts_to_call_handler,
 };

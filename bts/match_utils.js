@@ -442,6 +442,7 @@ function remove_called_timestamp(match, callback) {
 	setup.teams_present = undefined;
 	setup.team1_present = undefined;
 	setup.team2_present = undefined;
+	setup.call_reminder_ack_level = undefined;
 	setup.state = 'scheduled';
 	return callback(null);
 }
