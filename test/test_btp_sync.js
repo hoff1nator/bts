@@ -376,6 +376,51 @@ _describe('btp_sync', () => {
 		assert.strictEqual(merged.setup.call_reminder_ack_level, 1);
 	});
 
+	_it('does not carry a previous call session\'s escalation/presence state onto a fresh re-call', () => {
+		// A match that was called, freed, and is now being called again -
+		// current_match still has leftover fields from the FIRST call
+		// (e.g. the free hadn't been through this fix yet, or came from
+		// some other path). Both sides agree now_on_court is true, but
+		// that's only true because it was JUST re-called, not because it
+		// stayed on court continuously - the escalation timer and presence
+		// flags from the earlier call must not reappear as if no time had
+		// passed and players were still present from that match.
+		const currentMatch = {
+			setup: {
+				now_on_court: false,
+				called_to_court: true,
+				called_to_court_at: 1000,
+				second_call_at: 2000,
+				final_call_at: 3000,
+				teams_present: true,
+				team1_present: true,
+				team2_present: true,
+				call_reminder_ack_level: 2,
+				teams: [{ players: [] }, { players: [] }],
+			},
+		};
+		const btpMatch = {
+			setup: {
+				court_id: 'court_5',
+				now_on_court: true,
+				state: 'scheduled',
+				teams: [{ players: [] }, { players: [] }],
+			},
+		};
+
+		const merged = btp_sync._merge_local_match_into_btp_match(currentMatch, structuredClone(btpMatch));
+
+		assert.strictEqual(merged.setup.now_on_court, true);
+		assert.strictEqual(merged.setup.called_to_court, undefined);
+		assert.strictEqual(merged.setup.called_to_court_at, undefined);
+		assert.strictEqual(merged.setup.second_call_at, undefined);
+		assert.strictEqual(merged.setup.final_call_at, undefined);
+		assert.strictEqual(merged.setup.teams_present, undefined);
+		assert.strictEqual(merged.setup.team1_present, undefined);
+		assert.strictEqual(merged.setup.team2_present, undefined);
+		assert.strictEqual(merged.setup.call_reminder_ack_level, undefined);
+	});
+
 	_it('resets on-court/call state when BTP no longer has the match on any court and no result was entered', () => {
 		// Reproduces freeing a match from its court directly in the
 		// Tournament Planner without recording a winner - craft_match only

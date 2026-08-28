@@ -609,21 +609,31 @@ function mergeLocalMatchIntoBtpMatch(current_match, match) {
 		}
 	}
 
-	// Preserve calling/presence fields only if match is still on court
-	if (match.setup.now_on_court) {
+	// Preserve calling/presence fields only while the match has been
+	// continuously on court (both the fresh export and the local DB
+	// agree) - never across a fresh on-court session, whether that's the
+	// very first call or a re-call after being freed. This used to key
+	// off match.setup.now_on_court alone, which is also true right after
+	// a re-call - so a match freed and later called again would come back
+	// with its previous call's escalation timer and attendance state
+	// still attached, as if no time had passed and players were still
+	// marked present from the earlier match.
+	if (still_on_court) {
 		for (const k of ['called_to_court', 'called_to_court_at', 'second_call_at', 'final_call_at', 'teams_present', 'team1_present', 'team2_present', 'call_reminder_ack_level']) {
 			if (current_match.setup[k] !== undefined) {
 				match.setup[k] = current_match.setup[k];
 			}
 		}
-		// Self-heal matches that reached on-court without called_to_court
-		// ever being set (e.g. imported already-on-court via the
-		// matches_to_add path before that also set it) - otherwise they'd
-		// silently never be picked up by the call-escalation timer's query.
-		if (match.setup.called_timestamp && !match.setup.called_to_court) {
-			match.setup.called_to_court = true;
-			match.setup.called_to_court_at = match.setup.called_timestamp;
-		}
+	}
+	// Self-heal matches that reached on-court without called_to_court ever
+	// being set (e.g. imported already-on-court via the matches_to_add
+	// path before that also set it) - otherwise they'd silently never be
+	// picked up by the call-escalation timer's query. Applies to any
+	// on-court match, not just a continuously-on-court one, since a fresh
+	// call is exactly when this is most likely to be needed.
+	if (match.setup.now_on_court && match.setup.called_timestamp && !match.setup.called_to_court) {
+		match.setup.called_to_court = true;
+		match.setup.called_to_court_at = match.setup.called_timestamp;
 	}
 
 	const local_preparation_active =
