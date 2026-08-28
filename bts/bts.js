@@ -109,6 +109,10 @@ function create_app(config, db) {
 	app.get('/h/:tournament_key/rotating-display', http_api.rotating_display_handler);
 	app.get('/h/:tournament_key/matches', http_api.matches_handler);
 	app.get('/h/:tournament_key/court-overview', http_api.court_overview_handler);
+	app.get('/h/:tournament_key/courts-to-call', http_api.courts_to_call_handler);
+	app.get('/h/:tournament_key/courts-to-call/data', http_api.courts_to_call_data_handler);
+	app.post('/h/:tournament_key/courts-to-call/call', http_api.courts_to_call_call_handler);
+	app.post('/h/:tournament_key/courts-to-call/escalate', http_api.courts_to_call_escalate_handler);
 
 	var server = null;
 	if (config.enable_https) {

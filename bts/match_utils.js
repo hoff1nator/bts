@@ -2276,6 +2276,60 @@ function start_call_escalation_manager(app) {
 	}, 5000);
 }
 
+// Core "find the best candidate for this free court and call it" logic,
+// with no automation-setting gates - used both by the automatic trigger
+// (call_preparation_match_on_court, below) and by manual staff-initiated
+// calls (see http_api.js's courts_to_call_call_handler), so a "Call" button
+// press always works the same way regardless of whether automatic calling
+// is enabled for the tournament.
+function call_next_candidate_on_court(app, tournament, tournament_key, court_id) {
+	return new Promise((resolve, reject) => {
+		const match_automation = require('./match_automation');
+		Promise.all([
+			app.db.courts.find_async({ tournament_key }),
+			app.db.matches.find_async({ tournament_key }),
+			app.db.umpires.find_async({ tournament_key }),
+		]).then(([courts, matches, umpires]) => {
+			const current_tournament = {
+				...(tournament || {}),
+				courts,
+				matches,
+				umpires,
+			};
+			const candidates = match_automation.find_call_on_court_candidates(current_tournament, court_id, {
+				now_ts: now_ms(app),
+			});
+			if (!candidates || candidates.length === 0) {
+				debug_flags.log(app, tournament_key, '[bts] auto_call_trace:call_preparation_match_on_court_no_candidate', {
+					ts: now_ms(app),
+					tournament_key,
+					court_id,
+				});
+				return reject("No match found to call on court.");
+			}
+			const next_match = candidates[0];
+			debug_flags.log(app, tournament_key, '[bts] auto_call_trace:call_preparation_match_on_court_candidate', {
+				ts: now_ms(app),
+				tournament_key,
+				court_id,
+				match_id: next_match && next_match._id,
+				state: next_match && next_match.setup && next_match.setup.state,
+				highlight: next_match && next_match.setup && next_match.setup.highlight,
+				location_id: next_match && next_match.setup && next_match.setup.location_id,
+				candidate_count: candidates.length,
+			});
+			next_match.setup.court_id = court_id;
+			next_match.setup.now_on_court = true;
+			call_match(app, tournament, next_match, undefined, (callErr) => {
+				if (callErr) {
+					return reject(callErr);
+				}
+				return resolve(next_match);
+			});
+		}).catch((queryErr) => reject(queryErr));
+	});
+}
+
 function call_preparation_match_on_court(app, tournament_key, court_id) {
 	return new Promise((resolve, reject) => {
 		debug_flags.log(app, tournament_key, '[bts] auto_call_trace:call_preparation_match_on_court_start', {
@@ -2290,53 +2344,10 @@ function call_preparation_match_on_court(app, tournament_key, court_id) {
 			if (!is_tournament_automation_enabled(tournament)) {
 				return resolve("Global automation disabled");
 			}
-			if (tournament.call_next_possible_scheduled_match_in_preparation) {
-				const match_automation = require('./match_automation');
-				Promise.all([
-					app.db.courts.find_async({ tournament_key }),
-					app.db.matches.find_async({ tournament_key }),
-					app.db.umpires.find_async({ tournament_key }),
-				]).then(([courts, matches, umpires]) => {
-					const current_tournament = {
-						...(tournament || {}),
-						courts,
-						matches,
-						umpires,
-					};
-					const candidates = match_automation.find_call_on_court_candidates(current_tournament, court_id, {
-						now_ts: now_ms(app),
-					});
-					if (!candidates || candidates.length === 0) {
-						debug_flags.log(app, tournament_key, '[bts] auto_call_trace:call_preparation_match_on_court_no_candidate', {
-							ts: now_ms(app),
-							tournament_key,
-							court_id,
-						});
-						return reject("No match found to call on court.");
-					}
-					const next_match = candidates[0];
-					debug_flags.log(app, tournament_key, '[bts] auto_call_trace:call_preparation_match_on_court_candidate', {
-						ts: now_ms(app),
-						tournament_key,
-						court_id,
-						match_id: next_match && next_match._id,
-						state: next_match && next_match.setup && next_match.setup.state,
-						highlight: next_match && next_match.setup && next_match.setup.highlight,
-						location_id: next_match && next_match.setup && next_match.setup.location_id,
-						candidate_count: candidates.length,
-					});
-					next_match.setup.court_id = court_id;
-					next_match.setup.now_on_court = true;
-					call_match(app, tournament, next_match, undefined, (callErr) => {
-						if (callErr) {
-							return reject(callErr);
-						}
-						return resolve(next_match);
-					});
-				}).catch((queryErr) => reject(queryErr));
-			} else {
+			if (!tournament.call_next_possible_scheduled_match_in_preparation) {
 				return resolve("Function call_next_possible_scheduled_match_in_preparation disabled");
 			}
+			call_next_candidate_on_court(app, tournament, tournament_key, court_id).then(resolve).catch(reject);
 		});
 	});
 }
@@ -2710,6 +2721,7 @@ module.exports ={
 	start_call_escalation_manager,
 	auto_call_matches_on_free_courts,
 	call_preparation_match_on_court,
+	call_next_candidate_on_court,
 	call_next_possible_match_for_preparation,
 	call_match_in_preparation,
 	sort_free_courts_for_auto_call,

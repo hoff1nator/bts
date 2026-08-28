@@ -870,6 +870,394 @@ setInterval(function() {
 }
 
 
+// Courts-to-call: a staff-facing kiosk page (no admin login) for calling
+// matches to free courts and re-announcing overdue ones. Fully integrated
+// with v2's own call mechanism: "Call" invokes
+// match_utils.call_next_candidate_on_court(), the same candidate-selection
+// and call_match() waterfall automatic calling uses (officials, BTP sync,
+// etc. all happen the normal way) - this page just lets a human trigger it
+// on demand, which matters when a tournament has
+// call_next_possible_scheduled_match_in_preparation turned off (manual
+// mode) and needs someone to press the button instead.
+function courts_to_call_data_handler(req, res) {
+	const tournament_key = req.params.tournament_key;
+	const now = Date.now();
+	req.app.db.fetch_all([{
+		queryFunc: '_findOne',
+		collection: 'tournaments',
+		query: {key: tournament_key},
+	}, {
+		collection: 'courts',
+		query: {tournament_key},
+	}, {
+		collection: 'matches',
+		query: {tournament_key},
+	}, {
+		collection: 'umpires',
+		query: {tournament_key},
+	}], function(err, tournament, courts, matches, umpires) {
+		if (err || !tournament) {
+			res.json({status: 'error', message: err ? err.message : 'Tournament not found'});
+			return;
+		}
+
+		const match_automation = require('./match_automation');
+		const current_tournament = {...tournament, courts, matches, umpires};
+		const occupied_court_ids = new Set(
+			matches
+				.filter(m => m.setup && m.setup.now_on_court && m.setup.court_id)
+				.map(m => m.setup.court_id)
+		);
+
+		const to_call = [];
+		courts
+			.filter(c => c.is_active !== false && !occupied_court_ids.has(c._id))
+			.forEach(court => {
+				const candidates = match_automation.find_call_on_court_candidates(current_tournament, court._id, {now_ts: now});
+				if (candidates && candidates.length > 0) {
+					to_call.push({
+						court: {court_id: court._id, label: court.name || String(court.num)},
+						match: bupws.create_match_representation(req.app, tournament, candidates[0]),
+					});
+				}
+			});
+
+		const reminders = matches
+			.filter(m => m.setup && m.setup.now_on_court && !m.setup.teams_present && (m.setup.second_call_at || m.setup.final_call_at))
+			.map(m => bupws.create_match_representation(req.app, tournament, m));
+
+		const ctc_enabled = !!tournament.courts_to_call_enabled;
+		res.json({
+			status: 'ok',
+			to_call,
+			reminders,
+			call_settings: {
+				courts_to_call_enabled: ctc_enabled,
+				second_call_enabled: ctc_enabled && tournament.second_call_enabled !== false,
+				final_call_enabled: ctc_enabled && tournament.final_call_enabled !== false,
+				automatic_calling_enabled: !!tournament.call_next_possible_scheduled_match_in_preparation,
+			},
+		});
+	});
+}
+
+function courts_to_call_call_handler(req, res) {
+	const tournament_key = req.params.tournament_key;
+	const court_id = req.body && req.body.court_id;
+	if (!court_id) {
+		res.json({status: 'error', message: 'Missing court_id'});
+		return;
+	}
+	req.app.db.tournaments.findOne({key: tournament_key}, (err, tournament) => {
+		if (err || !tournament) {
+			res.json({status: 'error', message: err ? err.message : 'Tournament not found'});
+			return;
+		}
+		const match_utils = require('./match_utils');
+		match_utils.call_next_candidate_on_court(req.app, tournament, tournament_key, court_id)
+			.then(() => res.json({status: 'ok'}))
+			.catch((callErr) => res.json({status: 'error', message: callErr && (callErr.message || String(callErr))}));
+	});
+}
+
+// Manual re-announce: lets staff mark a match as needing a 2nd/final call
+// right now, ahead of (or in addition to) the automatic escalation timer
+// (see match_utils.start_call_escalation_manager). Same fields, same
+// broadcast - just human-triggered instead of time-triggered.
+function courts_to_call_escalate_handler(req, res) {
+	const tournament_key = req.params.tournament_key;
+	const match_id = req.body && req.body.match_id;
+	const level = req.body && req.body.level;
+	if (!match_id || (level !== 1 && level !== 2)) {
+		res.json({status: 'error', message: 'Missing match_id or invalid level'});
+		return;
+	}
+	const update = (level === 2) ? {'setup.final_call_at': Date.now()} : {'setup.second_call_at': Date.now()};
+	req.app.db.matches.update({_id: match_id, tournament_key}, {$set: update}, {}, (err, numAffected) => {
+		if (err || numAffected !== 1) {
+			res.json({status: 'error', message: err ? err.message : 'Match not found'});
+			return;
+		}
+		const admin = require('./admin');
+		admin.notify_change(req.app, tournament_key, 'match_edit', {match__id: match_id});
+		res.json({status: 'ok'});
+	});
+}
+
+function courts_to_call_handler(req, res) {
+	const tournament_key = req.params.tournament_key;
+	req.app.db.tournaments.findOne({key: tournament_key}, function(req_err, tournament) {
+		if (req_err || !tournament) {
+			res.status(404).send('Tournament not found');
+			return;
+		}
+		_courts_to_call_render(res, tournament_key, tournament);
+	});
+}
+
+function _courts_to_call_render(res, tournament_key, tournament) {
+	const html = `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Courts to Call</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+	background: #111;
+	color: #eee;
+	font-family: sans-serif;
+	padding: 2vmin;
+	display: flex;
+	flex-direction: column;
+}
+h1 { font-size: 3vmin; margin-bottom: 1.5vmin; color: #ccc; flex-shrink: 0; }
+#match-list { flex: 1; overflow-y: auto; }
+.match-row {
+	display: flex;
+	align-items: center;
+	background: #1e0a2e;
+	border: 2px solid #7b1fa2;
+	border-radius: 1.5vmin;
+	padding: 2vmin 2.5vmin;
+	margin-bottom: 1.5vmin;
+	cursor: pointer;
+	transition: background 0.2s, opacity 0.2s;
+	user-select: none;
+}
+.match-row:active { background: #2e1048; }
+.match-row.calling { opacity: 0.4; pointer-events: none; }
+.match-row.second-call { background: #2e1800; border-color: #f57c00; }
+.match-row.second-call:active { background: #3e2200; }
+.match-row.final-call { background: #2a0020; border-color: #e91e8c; }
+.match-row.final-call:active { background: #3a0030; }
+.match-court { font-size: 3vmin; font-weight: bold; min-width: 12vmin; color: #ce93d8; }
+.match-row.second-call .match-court { color: #ffb74d; }
+.match-row.final-call  .match-court { color: #e91e8c; }
+.match-call-label { font-size: 1.6vmin; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.3vmin; }
+.second-call .match-call-label { color: #f57c00; }
+.final-call  .match-call-label { color: #e91e8c; }
+.match-info { flex: 1; }
+.match-players { font-size: 2.5vmin; color: #eee; }
+.match-event { font-size: 2vmin; color: #bbb; font-style: italic; margin-top: 0.4vmin; }
+.match-call-btn { font-size: 2.5vmin; background: #7b1fa2; color: #fff; border: none; border-radius: 1vmin; padding: 1vmin 2vmin; cursor: pointer; flex-shrink: 0; }
+.second-call .match-call-btn { background: #f57c00; }
+.final-call  .match-call-btn { background: #e91e8c; }
+#empty-msg { color: #555; font-size: 2.5vmin; margin-top: 3vmin; text-align: center; }
+#auto-note { color: #666; font-size: 1.6vmin; margin-bottom: 1vmin; }
+#last-update { font-size: 1.5vmin; color: #555; margin-top: 1vmin; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<h1>Courts to Call</h1>
+<div id="auto-note"></div>
+<div id="match-list"></div>
+<div id="last-update"></div>
+<script>
+var TOURNAMENT_KEY = ${JSON.stringify(tournament_key)};
+var POLL_INTERVAL = 5000;
+var _STRINGS = (${JSON.stringify(tournament.language || 'de')} === 'de') ? {
+	title: 'Feldaufruf',
+	second_call: '⚠ 2. Aufruf',
+	final_call: '⚠ Letzter Aufruf',
+	call_btn: 'Aufrufen',
+	remind_btn_2: '2. Aufruf auslösen',
+	remind_btn_3: 'Letzten Aufruf auslösen',
+	all_called: 'Nichts zu tun – alle Felder sind versorgt.',
+	auto_on: 'Automatischer Feldaufruf ist aktiv – diese Liste sollte meist leer sein.',
+	auto_off: 'Automatischer Feldaufruf ist deaktiviert – bitte manuell aufrufen.',
+	last_update: 'Letztes Update: ',
+} : {
+	title: 'Courts to Call',
+	second_call: '⚠ 2nd Call',
+	final_call: '⚠ Final Call',
+	call_btn: 'Call',
+	remind_btn_2: 'Trigger 2nd call',
+	remind_btn_3: 'Trigger final call',
+	all_called: 'Nothing to do – all courts are covered.',
+	auto_on: 'Automatic calling is on – this list should usually be empty.',
+	auto_off: 'Automatic calling is off – please call matches manually.',
+	last_update: 'Last update: ',
+};
+document.title = _STRINGS.title;
+document.querySelector('h1').textContent = _STRINGS.title;
+
+function players_str(setup, team_idx) {
+	var team = setup.teams && setup.teams[team_idx];
+	if (!team || !team.players || team.players.length === 0) return 'N.N.';
+	if (setup.is_doubles && team.players.length > 1) {
+		return team.players[0].name + ' / ' + team.players[1].name;
+	}
+	return team.players[0].name;
+}
+
+var _busy = {};
+
+function post(url, body, cb) {
+	var xhr = new XMLHttpRequest();
+	xhr.open('POST', url);
+	xhr.setRequestHeader('Content-Type', 'application/json');
+	xhr.onload = function() {
+		try {
+			var data = JSON.parse(xhr.responseText);
+			cb(data.status === 'ok' ? null : data.message, data);
+		} catch (e) {
+			cb('parse error');
+		}
+	};
+	xhr.onerror = function() { cb('network error'); };
+	xhr.send(JSON.stringify(body));
+}
+
+function make_call_row(court, match) {
+	var row = document.createElement('div');
+	row.className = 'match-row';
+	var busy_key = 'call:' + court.court_id;
+	row.addEventListener('click', function() {
+		if (_busy[busy_key]) return;
+		_busy[busy_key] = true;
+		row.classList.add('calling');
+		post('/h/' + encodeURIComponent(TOURNAMENT_KEY) + '/courts-to-call/call', {court_id: court.court_id}, function(err) {
+			delete _busy[busy_key];
+			if (err) row.classList.remove('calling');
+			poll();
+		});
+	});
+
+	var court_el = document.createElement('div');
+	court_el.className = 'match-court';
+	court_el.textContent = court.label;
+	row.appendChild(court_el);
+
+	var info_el = document.createElement('div');
+	info_el.className = 'match-info';
+	var players_el = document.createElement('div');
+	players_el.className = 'match-players';
+	players_el.textContent = players_str(match.setup, 0) + ' vs ' + players_str(match.setup, 1);
+	info_el.appendChild(players_el);
+	var event_text = match.setup.event_name || '';
+	if (match.setup.match_name) event_text += (event_text ? ' – ' : '') + match.setup.match_name;
+	if (event_text) {
+		var event_el = document.createElement('div');
+		event_el.className = 'match-event';
+		event_el.textContent = event_text;
+		info_el.appendChild(event_el);
+	}
+	row.appendChild(info_el);
+
+	var btn = document.createElement('button');
+	btn.className = 'match-call-btn';
+	btn.textContent = _STRINGS.call_btn;
+	row.appendChild(btn);
+	return row;
+}
+
+function make_reminder_row(match) {
+	var level = match.setup.final_call_at ? 2 : 1;
+	var row = document.createElement('div');
+	row.className = 'match-row ' + (level === 2 ? 'final-call' : 'second-call');
+	var raw_id = String(match.setup.match_id || '').replace(/^bts_/, '');
+	var busy_key = 'esc:' + raw_id;
+	row.addEventListener('click', function() {
+		if (_busy[busy_key] || level >= 2) return;
+		_busy[busy_key] = true;
+		row.classList.add('calling');
+		post('/h/' + encodeURIComponent(TOURNAMENT_KEY) + '/courts-to-call/escalate', {match_id: raw_id, level: 2}, function(err) {
+			delete _busy[busy_key];
+			if (err) row.classList.remove('calling');
+			poll();
+		});
+	});
+
+	var court_el = document.createElement('div');
+	court_el.className = 'match-court';
+	court_el.textContent = match.setup.court_id || '';
+	row.appendChild(court_el);
+
+	var info_el = document.createElement('div');
+	info_el.className = 'match-info';
+	var label_el = document.createElement('div');
+	label_el.className = 'match-call-label';
+	label_el.textContent = level === 2 ? _STRINGS.final_call : _STRINGS.second_call;
+	info_el.appendChild(label_el);
+	var players_el = document.createElement('div');
+	players_el.className = 'match-players';
+	players_el.textContent = players_str(match.setup, 0) + ' vs ' + players_str(match.setup, 1);
+	info_el.appendChild(players_el);
+	row.appendChild(info_el);
+
+	var btn = document.createElement('button');
+	btn.className = 'match-call-btn';
+	btn.textContent = level === 2 ? _STRINGS.final_call : _STRINGS.remind_btn_3;
+	if (level === 2) btn.disabled = true;
+	row.appendChild(btn);
+	return row;
+}
+
+function render(data) {
+	var container = document.getElementById('match-list');
+	container.innerHTML = '';
+
+	document.getElementById('auto-note').textContent =
+		data.call_settings && data.call_settings.automatic_calling_enabled ? _STRINGS.auto_on : _STRINGS.auto_off;
+
+	if ((!data.reminders || data.reminders.length === 0) && (!data.to_call || data.to_call.length === 0)) {
+		var empty = document.createElement('div');
+		empty.id = 'empty-msg';
+		empty.textContent = _STRINGS.all_called;
+		container.appendChild(empty);
+	} else {
+		(data.reminders || []).forEach(function(m) { container.appendChild(make_reminder_row(m)); });
+		(data.to_call || []).forEach(function(entry) { container.appendChild(make_call_row(entry.court, entry.match)); });
+	}
+
+	document.getElementById('last-update').textContent = _STRINGS.last_update + new Date().toLocaleTimeString();
+}
+
+function poll() {
+	var xhr = new XMLHttpRequest();
+	xhr.open('GET', '/h/' + encodeURIComponent(TOURNAMENT_KEY) + '/courts-to-call/data');
+	xhr.onload = function() {
+		if (xhr.status !== 200) return;
+		try {
+			var data = JSON.parse(xhr.responseText);
+			if (data.status !== 'ok') return;
+			render(data);
+		} catch(e) {}
+	};
+	xhr.send();
+}
+
+poll();
+setInterval(poll, POLL_INTERVAL);
+
+var _ws_refresh_types = {
+	match_edit:1, score:1, match_called_on_court:1,
+	court_current_match:1, update_player_status:1, match_preparation_call:1
+};
+function ws_connect() {
+	var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+	var sock = new WebSocket(proto + '//' + location.host + '/ws/admin');
+	sock.onmessage = function(ev) {
+		try {
+			var msg = JSON.parse(ev.data);
+			if (msg.type === 'change' && _ws_refresh_types[msg.ctype]) poll();
+		} catch(e) {}
+	};
+	sock.onclose = function() { setTimeout(ws_connect, 3000); };
+	sock.onerror = function() { sock.close(); };
+}
+ws_connect();
+</script>
+</body>
+</html>`;
+	res.setHeader('Content-Type', 'text/html; charset=utf-8');
+	res.setHeader('Cache-Control', 'no-cache');
+	res.send(html);
+}
+
 module.exports = {
 	logo_handler,
 	matchinfo_handler,
@@ -877,4 +1265,8 @@ module.exports = {
 	rotating_display_handler,
 	matches_handler,
 	court_overview_handler,
+	courts_to_call_data_handler,
+	courts_to_call_call_handler,
+	courts_to_call_escalate_handler,
+	courts_to_call_handler,
 };
