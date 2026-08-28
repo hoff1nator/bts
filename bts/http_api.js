@@ -507,7 +507,21 @@ function render(courts, matches, call_settings, battery_by_court) {
 	for (var i = 0; i < matches.length; i++) {
 		var m = matches[i];
 		var cid = m.setup && m.setup.court_id;
-		if (cid && !by_court[cid]) by_court[cid] = m;
+		if (!cid) continue;
+		// BTP reports a court_id on matches merely scheduled/pre-assigned
+		// to a court, not just the one actually on it right now - several
+		// matches can legitimately share the same court_id. Picking
+		// whichever came first in the array used to let a not-yet-called
+		// match block out the real on-court one whenever it happened to
+		// sort earlier, showing the court as empty even with a live game
+		// on it. An actually-on-court match always wins regardless of
+		// array order; otherwise keep first-match-wins as a stable pick
+		// among purely-scheduled matches (this card renders as "no game"
+		// either way when nothing is on_court, so which one wins there
+		// doesn't affect what's displayed).
+		if (!by_court[cid] || (!by_court[cid].setup.now_on_court && m.setup.now_on_court)) {
+			by_court[cid] = m;
+		}
 	}
 
 	container.innerHTML = '';
@@ -690,7 +704,13 @@ function _check_court_freed(courts, matches, recently_finished) {
 	var by_court = {};
 	for (var i = 0; i < matches.length; i++) {
 		var m = matches[i];
-		if (m.setup && m.setup.court_id) by_court[m.setup.court_id] = true;
+		// A court_id alone doesn't mean this match is actually on the
+		// court right now - BTP also reports it on matches merely
+		// scheduled/pre-assigned there. Counting those as "occupied" meant
+		// a court holding only scheduled (never-called) matches never
+		// looked free to begin with, so it could never register the
+		// true->false transition this sound depends on.
+		if (m.setup && m.setup.court_id && m.setup.now_on_court) by_court[m.setup.court_id] = true;
 	}
 	for (var i = 0; i < recently_finished.length; i++) {
 		var rf = recently_finished[i];
