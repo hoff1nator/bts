@@ -376,6 +376,33 @@ _describe('btp_sync', () => {
 		assert.strictEqual(merged.setup.call_reminder_ack_level, 1);
 	});
 
+	_it('backfills called_to_court/called_to_court_at for an on-court match that never had them set', () => {
+		// Reproduces a match imported already-on-court from BTP (or any
+		// other path that only ever set called_timestamp, not
+		// called_to_court) - without this backfill, the call-escalation
+		// timer's query ('setup.called_to_court': true) would never match
+		// it, so it could never reach a 2nd/final call.
+		const currentMatch = {
+			setup: {
+				now_on_court: true,
+				called_timestamp: 1500,
+				teams: [{ players: [] }, { players: [] }],
+			},
+		};
+		const btpMatch = {
+			setup: {
+				now_on_court: true,
+				state: 'blocked',
+				teams: [{ players: [] }, { players: [] }],
+			},
+		};
+
+		const merged = btp_sync._merge_local_match_into_btp_match(currentMatch, structuredClone(btpMatch));
+
+		assert.strictEqual(merged.setup.called_to_court, true);
+		assert.strictEqual(merged.setup.called_to_court_at, 1500);
+	});
+
 	_it('does not preserve call-escalation and presence fields once the match is off court', () => {
 		const currentMatch = {
 			setup: {

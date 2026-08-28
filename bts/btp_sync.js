@@ -597,6 +597,14 @@ function mergeLocalMatchIntoBtpMatch(current_match, match) {
 				match.setup[k] = current_match.setup[k];
 			}
 		}
+		// Self-heal matches that reached on-court without called_to_court
+		// ever being set (e.g. imported already-on-court via the
+		// matches_to_add path before that also set it) - otherwise they'd
+		// silently never be picked up by the call-escalation timer's query.
+		if (match.setup.called_timestamp && !match.setup.called_to_court) {
+			match.setup.called_to_court = true;
+			match.setup.called_to_court_at = match.setup.called_timestamp;
+		}
 	}
 
 	const local_preparation_active =
@@ -1346,6 +1354,16 @@ async function integrate_matches(app, tkey, btp_state, scoring_formats, location
 
 			if(match.setup.now_on_court && !match.setup.called_timestamp) {
 				match.setup.called_timestamp = now_ms(app);
+			}
+			// A match BTP already reports as on-court (freshly imported, so
+			// no local call ever ran match_utils.add_called_timestamp) still
+			// needs called_to_court/called_to_court_at - the call-escalation
+			// timer's query only matches setup.called_to_court === true, so
+			// without this a newly-imported on-court match would never
+			// escalate to a 2nd/final call, regardless of courts_to_call_enabled.
+			if (match.setup.now_on_court && !match.setup.called_to_court) {
+				match.setup.called_to_court = true;
+				match.setup.called_to_court_at = match.setup.called_timestamp;
 			}
 
 			app.db.matches.insert(match, function(err) {
