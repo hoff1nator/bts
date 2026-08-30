@@ -7,6 +7,20 @@ const {_describe, _it} = require('./tutils.js');
 const btp_sync = require('../bts/btp_sync');
 
 _describe('btp_sync', () => {
+	_it('reads a BTP setting value when present', () => {
+		const settings = new Map([[1001, {Value: ['25. Ostbek Turnier']}]]);
+		assert.strictEqual(btp_sync._btp_setting_value(settings, 1001), '25. Ostbek Turnier');
+	});
+
+	_it('returns undefined instead of throwing when a BTP setting id is missing', () => {
+		// A prior crash (uncaught TypeError reading .Value off undefined)
+		// took the whole process - and every tablet's websocket connection
+		// with it - down whenever a sync payload omitted a settings id that
+		// was assumed to always be present.
+		const settings = new Map();
+		assert.strictEqual(btp_sync._btp_setting_value(settings, 1001), undefined);
+	});
+
 	_it('normalizes standard scoring formats from BTP fields', () => {
 		const normalized = btp_sync._normalize_scoring_format({
 			ID: ['10'],

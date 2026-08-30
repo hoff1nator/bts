@@ -1967,6 +1967,11 @@ function integrate_courts(app, tournament_key, btp_state, scoring_formats, locat
 	});
 }
 
+function btp_setting_value(btp_settings_map, id) {
+	const setting = btp_settings_map.get(id);
+	return setting ? setting.Value[0] : undefined;
+}
+
 function integrate_btp_settings(app, tkey, btp_state, callback) {
 	const admin = require('./admin'); // avoid dependency cycle
 
@@ -1979,10 +1984,22 @@ function integrate_btp_settings(app, tkey, btp_state, callback) {
 			changed = true;
 		}
 
-		const tournament_name = btp_state.btp_settings.get(1001).Value[0];
-		const tournament_urn = btp_state.btp_settings.get(1008).Value[0];
-		const check_in_per_match = btp_state.btp_settings.get(1003).Value[0] ? false : true;
-		const pause_duration_ms = btp_state.btp_settings.get(1303).Value[0] * 60 * 1000;
+		// BTP doesn't always include every settings id in a given sync
+		// payload - .get(id) returning undefined here used to crash the
+		// whole process (uncaught TypeError reading .Value off undefined),
+		// which took down every tablet's websocket connection at once.
+		// Fall back to whatever this tournament already has stored for a
+		// setting BTP didn't report this cycle, rather than guessing or
+		// crashing.
+		const raw_tournament_name = btp_setting_value(btp_state.btp_settings, 1001);
+		const raw_tournament_urn = btp_setting_value(btp_state.btp_settings, 1008);
+		const raw_check_in_flag = btp_setting_value(btp_state.btp_settings, 1003);
+		const raw_pause_minutes = btp_setting_value(btp_state.btp_settings, 1303);
+
+		const tournament_name = raw_tournament_name !== undefined ? raw_tournament_name : tournament.btp_settings.tournament_name;
+		const tournament_urn = raw_tournament_urn !== undefined ? raw_tournament_urn : tournament.btp_settings.tournament_urn;
+		const check_in_per_match = raw_check_in_flag !== undefined ? (raw_check_in_flag ? false : true) : tournament.btp_settings.check_in_per_match;
+		const pause_duration_ms = raw_pause_minutes !== undefined ? raw_pause_minutes * 60 * 1000 : tournament.btp_settings.pause_duration_ms;
 
 		if (tournament.btp_settings.tournament_name != tournament_name) {
 			tournament.btp_settings.tournament_name = tournament_name;
@@ -3137,6 +3154,7 @@ module.exports = {
 	sync_btp_data,
 	time_str,
 	// test only
+	_btp_setting_value: btp_setting_value,
 	_integrate_player_state: integrate_player_state,
 	_integrate_courts: integrate_courts,
 	_parse_btp_court_num: parse_btp_court_num,
